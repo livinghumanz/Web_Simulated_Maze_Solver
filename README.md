@@ -136,6 +136,27 @@ The solver can run in simulation mode by default. This is controlled in [Core/In
 
 The current project is set up so the solver uses the built-in simulation path unless the code is changed to use real wall-sensor input. This is convenient for testing and debugging the maze-solving logic without hardware.
 
+## Dependencies
+
+This project relies on the FloodFill-Algorithm-with-simulation repository for simulation assets and related functionality.
+
+Because this dependency is kept separate from the main build system, you must clone it manually alongside this project.
+
+### Setup instructions
+
+1. Clone this repository and navigate into the root directory:
+   ```bash
+   git clone <your-main-repo-url>
+   cd <your-main-repo-name>
+   ```
+
+2. Clone the dependency repository into a separate folder, for example `external/simulation`:
+   ```bash
+   git clone git@github.com:livinghumanz/FloodFill-Algorithm-with-simulation.git external/simulation
+   ```
+
+> Note: Ensure your CMake configuration is not set up to track or build the `external/simulation` folder.
+
 ## Real hardware notes
 
 The current code contains calls to wall-detection functions such as `API_leftWall()`, `API_frontWall()`, and `API_rightWall()`. In the current implementation, these functions read values from the terminal input rather than actual hardware sensors. That means:
