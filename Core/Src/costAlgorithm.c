@@ -1,10 +1,10 @@
 #include "costAlgorithm.h"
 #include "maze_queue.h"
 
-extern WallInfo WALLS[MAZE_DIMENSIONS][MAZE_DIMENSIONS];
+extern WallInfo WALLS[MAZE_DIMENSIONS_MAX][MAZE_DIMENSIONS_MAX];
 
 // Cost matrix which contains cell weights. 
-uint16_t COSTMARY[MAZE_DIMENSIONS][MAZE_DIMENSIONS]; 
+uint16_t COSTMARY[MAZE_DIMENSIONS_MAX][MAZE_DIMENSIONS_MAX];
 
 /*
  * This file contains the implementation of an algorithm to determine the area connected to a given node in a multi-dimensional array.

@@ -29,6 +29,12 @@
 #include "debug_log.h"
 #include "motor.h"
 #include "maze_main.h"
+#include "bt_log.h"
+#include "dip_switch.h"
+#include "app_bt_test.h"
+#include "app_motor_test.h"
+#include "app_pid_test.h"
+#include "app_maze.h"
 #include <stdint.h>
 /* USER CODE END Includes */
 
@@ -151,6 +157,30 @@ void StartDefaultTask(void *argument)
 
   stop_Slow();
 
+  /* Mode is chosen once at boot from the DIP switches. */
+  uint8_t dip = DIP_Read();
+  BT_LOG("Boot: DIP=0x%X mode=%s", dip, DIP_ModeName(dip));
+
+  switch (dip) {
+    case APP_MODE_BT_TEST:
+      BtTest_Run(dip);   /* never returns */
+      break;
+    case APP_MODE_MOTOR_TEST:
+      MotorTest_Run(dip); /* never returns */
+      break;
+    case APP_MODE_PID_TEST:
+      PidTest_Run(dip);   /* never returns */
+      break;
+    case APP_MODE_MAZE:
+      MazeApp_Run(dip);   /* never returns */
+      break;
+    case APP_MODE_WEB_SIM:
+      break;             /* continue with the web-simulator flow below */
+    default:
+      BT_LOG("No mode assigned to DIP=0x%X, idling with motors off", dip);
+      for (;;) { osDelay(1000); }
+  }
+
   LOG_INFO("Main Maze begins");
   /*
   * Initialise the Walls based on out "L" finger rule.
@@ -207,23 +237,27 @@ void StartEncoderTask(void *argument)
     if (osMessageQueueGet(motorQueueHandle, &nextMove, 0, osWaitForever) == osOK) {
       switch (nextMove) {
         case FORWARD: {
+          forward(850, 850);
+          osDelay(200);
+          stop_Slow();
           SEND_TMSG("FORWARD");
-          // forward(850, 850);
-          // osDelay(200);
-          // stop_Slow();
          }
         break;
-        case REVERSE: {SEND_TMSG("REVERSE"); 
+        case REVERSE: {
           // reverse(850, 850); osDelay(200); stop_Slow();
+          SEND_TMSG("REVERSE"); 
         } break;
-        case LEFT: {SEND_TMSG("LEFT"); 
+        case LEFT: {
           // left(850, 850); osDelay(200); stop_Slow();
+          SEND_TMSG("LEFT"); 
         } break;
-        case RIGHT: {SEND_TMSG("RIGHT"); 
+        case RIGHT: {
           // right(850, 850); osDelay(200); stop_Slow();
+          SEND_TMSG("RIGHT"); 
         } break;
-        case UTURN: {SEND_TMSG("UTURN"); 
+        case UTURN: {
           // uTurn(850, 850); osDelay(200);
+          SEND_TMSG("UTURN"); 
         } break;
         case NONE: {SEND_TMSG("NONE");} break;
         default:

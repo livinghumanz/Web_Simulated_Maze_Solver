@@ -31,6 +31,8 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "comm_uart.h"
+#include "bt_log.h"
+#include "dfu.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -74,7 +76,7 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-
+  Dfu_CheckAtStartup();   /* "DFU" command: jump to the USB bootloader from a clean reset */
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -107,7 +109,8 @@ int main(void)
   MX_USART6_UART_Init();
   /* USER CODE BEGIN 2 */
 
-  UART_Comm_Init(); // initialize DMA Custom written code 
+  UART_Comm_Init(); // initialize DMA Custom written code
+  BT_Log_Init();    // Bluetooth console on USART6 (RX interrupt + TX ring buffer)
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_3);

@@ -59,7 +59,9 @@
 #include<stdint.h>
 
 // Constants
-#define MAZE_DIMENSIONS 5
+#define MAZE_DIMENSIONS_MAX 5          /* array size; the active size is MAZE_DIM */
+extern uint8_t MAZE_DIM;               /* active maze size, 1..MAZE_DIMENSIONS_MAX (default 5) */
+#define MAZE_DIMENSIONS MAZE_DIM
 #define MAZE_CELL_COUNT (MAZE_DIMENSIONS * MAZE_DIMENSIONS)
 #define MAX_COST (MAZE_CELL_COUNT -1)
 

@@ -53,6 +53,19 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/motor.c
     Core/Src/simulator.c
     Core/Src/comm_uart.c
+    Core/Src/bt_log.c
+    Core/Src/dip_switch.c
+    Core/Src/app_bt_test.c
+    Core/Src/app_motor_test.c
+    Core/Src/encoder.c
+    Core/Src/battery.c
+    Core/Src/motion.c
+    Core/Src/app_pid_test.c
+    Core/Src/ultrasonic.c
+    Core/Src/maze_run.c
+    Core/Src/app_maze.c
+    Core/Src/settings.c
+    Core/Src/dfu.c
 )
 
 # Add include paths
