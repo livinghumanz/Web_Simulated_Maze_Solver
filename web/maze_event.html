@@ -1,0 +1,550 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>RatRocket Maze</title>
+  <!--
+    Maker Faire control panel for the RatRocket micromouse.
+    Open in Chrome or Edge (Web Serial). Works offline: no external files.
+    Talks to the robot's HC-05 Bluetooth COM port (9600 baud), robot in MAZE
+    mode (DIP: SW3 only). Protocol: see docs/firmware.md.
+    Coordinates are the robot's own: (0,0) bottom-left, North = up.
+  -->
+  <style>
+    :root{
+      --bg-1:#fbfdff; --bg-2:#f1f7ff; --card:#ffffff; --text:#0f172a; --muted:#6b7280;
+      --line:#e6eefc; --accent:#2563eb; --accent-2:#06b6d4; --ok:#10b981; --warn:#f59e0b;
+      --bad:#ef4444; --goal:#fb923c; --wall:#0b1220; --shadow:rgba(16,24,40,0.07);
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0;font-family:system-ui,"Segoe UI",Arial,sans-serif;color:var(--text);
+      background:linear-gradient(180deg,var(--bg-1),var(--bg-2))}
+    .app{max-width:1200px;margin:0 auto;padding:16px;display:flex;flex-direction:column;gap:14px;min-height:100vh}
+    header{display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:center;
+      background:var(--card);border-radius:12px;padding:14px 16px;box-shadow:0 8px 32px var(--shadow)}
+    h1{font-size:20px;margin:0}
+    .sub{color:var(--muted);font-size:13px;margin-top:2px}
+    .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+    button{font:inherit;cursor:pointer;border-radius:10px;padding:9px 14px;border:1px solid var(--line);
+      background:var(--card);color:var(--text);font-weight:600}
+    button:hover{background:#f8fbff}
+    button:disabled{opacity:.45;cursor:not-allowed}
+    .primary{border:0;color:#fff;background:linear-gradient(90deg,var(--accent),var(--accent-2));
+      box-shadow:0 8px 24px rgba(37,99,235,.18)}
+    .primary:hover{background:linear-gradient(90deg,var(--accent),var(--accent-2));filter:brightness(1.05)}
+    .stop{border:0;color:#fff;background:var(--bad)}
+    .stop:hover{background:var(--bad);filter:brightness(1.08)}
+    .pill{display:inline-flex;align-items:center;gap:8px;padding:7px 12px;border-radius:999px;
+      background:#f1f5f9;font-size:13px;font-weight:600}
+    .dot{width:10px;height:10px;border-radius:50%;background:var(--muted)}
+    .dot.ok{background:var(--ok)} .dot.busy{background:var(--warn)} .dot.bad{background:var(--bad)}
+    main{display:flex;gap:16px;align-items:flex-start}
+    aside{width:300px;flex:0 0 300px;display:flex;flex-direction:column;gap:12px}
+    .card{background:var(--card);border-radius:12px;padding:12px;box-shadow:0 8px 32px var(--shadow)}
+    .card h2{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:0 0 8px}
+    .tools{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .tool.active{outline:2px solid var(--accent);background:#eff6ff}
+    .dirs{display:flex;gap:6px;margin-top:8px}
+    .dirs[hidden]{display:none}
+    .dirs button{flex:1;padding:7px 0}
+    .dirs button.active{outline:2px solid var(--accent);background:#eff6ff}
+    .hint{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.4}
+    label.check{display:flex;gap:8px;align-items:center;font-size:14px}
+    select,input[type=text]{font:inherit;padding:8px;border-radius:8px;border:1px solid var(--line);background:#fff}
+    .board{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px}
+    .canvas-wrap{background:var(--card);border-radius:12px;box-shadow:0 20px 60px rgba(15,23,42,.06);
+      display:flex;justify-content:center;align-items:center;padding:12px}
+    canvas{max-width:100%;touch-action:manipulation}
+    .status{font-size:18px;font-weight:600;min-height:28px}
+    .status.warn{color:#b45309} .status.bad{color:var(--bad)}
+    .legend{display:flex;flex-wrap:wrap;gap:14px;font-size:12px;color:var(--muted)}
+    .legend span::before{content:"";display:inline-block;width:18px;height:4px;margin-right:6px;vertical-align:middle;background:var(--c)}
+    #log{font-family:Consolas,monospace;font-size:12px;height:220px;overflow:auto;white-space:pre-wrap;
+      background:#0b1220;color:#cbd5e1;border-radius:8px;padding:8px}
+    .cmdline{display:flex;gap:6px;margin-top:8px}
+    .cmdline input{flex:1;min-width:0}
+    @media (max-width:900px){ main{flex-direction:column} aside{width:100%;flex:none} }
+  </style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div>
+      <h1>RatRocket Maze</h1>
+      <div class="sub">Build the maze, draw it here, then pick where the robot should go.</div>
+    </div>
+    <div class="row">
+      <span class="pill"><span id="connDot" class="dot"></span><span id="connText">Not connected</span></span>
+      <span class="pill"><span id="robotDot" class="dot"></span><span id="robotText">Robot idle</span></span>
+      <button id="connectBtn" class="primary">Connect robot</button>
+      <button id="stopBtn" class="stop">STOP</button>
+    </div>
+  </header>
+
+  <main>
+    <aside>
+      <div class="card">
+        <h2>1 · Maze</h2>
+        <div class="row">
+          <label>Size
+            <select id="sizeSel"><option>2</option><option selected>3</option><option>4</option><option>5</option></select>
+          </label>
+          <button id="clearBtn">Clear walls</button>
+          <button id="randomBtn">Random maze</button>
+        </div>
+        <div class="hint">Use the <b>Walls</b> tool and click between two cells to add or remove a wall.
+          Every change is sent to the robot. "Random maze" gives visitors a layout to build.</div>
+      </div>
+
+      <div class="card">
+        <h2>2 · Tools</h2>
+        <div class="tools">
+          <button class="tool active" data-tool="walls">Walls</button>
+          <button class="tool" data-tool="start">Start</button>
+          <button class="tool" data-tool="goal">Goal</button>
+          <button class="tool" data-tool="pose">Robot is here</button>
+        </div>
+        <div id="poseDirs" class="dirs" hidden>
+          <button data-dir="N" class="active">↑ N</button><button data-dir="E">→ E</button>
+          <button data-dir="S">↓ S</button><button data-dir="W">← W</button>
+        </div>
+        <div class="hint" id="toolHint"></div>
+      </div>
+
+      <div class="card">
+        <h2>Escape game</h2>
+        <button id="escapeBtn" class="primary" style="width:100%">Escape!</button>
+        <div class="hint">Leave one entry (bottom-left, cell 0,0) and one exit in the outer wall.
+          Put the robot outside, in front of the entry, facing in, then press Escape!
+          It follows the right-hand wall until it is out. No drawing needed.</div>
+      </div>
+
+      <div class="card">
+        <h2>Robot</h2>
+        <label class="check"><input type="checkbox" id="senseChk"> Let the sensors correct the drawing</label>
+        <div class="hint">Off (recommended): your drawing is the truth for walls; the sensors still keep the robot
+          centred and stop it before a wall, and disagreements are shown in colour.
+          On: if a sensor contradicts the drawing twice in a row, the robot changes its map and replans.</div>
+        <div class="row" style="margin-top:8px">
+          <button id="sendMazeBtn">Resend maze</button>
+          <button id="whereBtn">Where are you?</button>
+        </div>
+      </div>
+    </aside>
+
+    <section class="board">
+      <div class="status" id="status">Connect the robot to begin.</div>
+      <div class="canvas-wrap"><canvas id="maze" width="640" height="640"></canvas></div>
+      <div class="legend">
+        <span style="--c:var(--wall)">drawn wall</span>
+        <span style="--c:var(--bad)">robot sensed a wall that is not drawn</span>
+        <span style="--c:repeating-linear-gradient(90deg,var(--warn) 0 4px,transparent 4px 7px)">drawn wall the robot did not find</span>
+      </div>
+      <div class="card">
+        <h2>Robot log</h2>
+        <div id="log"></div>
+        <div class="cmdline">
+          <input type="text" id="cmdInput" placeholder="Command, e.g. US, CFG, TURN 90, HELP">
+          <button id="cmdSend">Send</button>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  // ---------------- state ----------------
+  const DIRS = ['N', 'E', 'S', 'W'];
+  const DX = { N: 0, E: 1, S: 0, W: -1 }, DY = { N: 1, E: 0, S: -1, W: 0 };
+  const OPP = { N: 'S', E: 'W', S: 'N', W: 'E' };
+  const ANGLE = { N: -90, E: 0, S: 90, W: 180 };
+
+  let n = 3;
+  let walls = [];          // walls[x][y] = {N,E,S,W} booleans, drawn by visitors
+  let seen = null;         // robot's belief: seen[x][y][dir] = 0 open, 1 wall, 2 unseen
+  let robot = { x: 0, y: 0, d: 'N', px: null, py: null, ang: -90 };
+  let start = null, goal = null;
+  let tool = 'walls', poseDir = 'N';
+  let busy = false;
+
+  const canvas = document.getElementById('maze');
+  const ctx = canvas.getContext('2d');
+  const $ = id => document.getElementById(id);
+
+  function initWalls(size) {
+    n = size;
+    walls = [];
+    for (let x = 0; x < n; x++) {
+      walls.push([]);
+      for (let y = 0; y < n; y++) {
+        walls[x].push({ N: y === n - 1, E: x === n - 1, S: y === 0, W: x === 0 });
+      }
+    }
+    seen = null;
+    if (robot.x >= n || robot.y >= n) { robot.x = 0; robot.y = 0; }
+    robot.px = null;
+  }
+
+  const inside = (x, y) => x >= 0 && y >= 0 && x < n && y < n;
+  const isBorder = (x, y, d) => !inside(x + DX[d], y + DY[d]);
+
+  function setWall(x, y, d, on) {
+    if (isBorder(x, y, d)) return;              // the outer border is always closed
+    walls[x][y][d] = on;
+    walls[x + DX[d]][y + DY[d]][OPP[d]] = on;
+  }
+
+  function randomMaze() {
+    initWalls(n);
+    for (let x = 0; x < n; x++) for (let y = 0; y < n; y++) for (const d of DIRS) setWall(x, y, d, true);
+    const seenSet = new Set(['0,0']);
+    const stack = [[0, 0]];
+    while (stack.length) {
+      const [x, y] = stack[stack.length - 1];
+      const options = DIRS.filter(d => inside(x + DX[d], y + DY[d]) && !seenSet.has(`${x + DX[d]},${y + DY[d]}`));
+      if (!options.length) { stack.pop(); continue; }
+      const d = options[Math.floor(Math.random() * options.length)];
+      setWall(x, y, d, false);
+      const nx = x + DX[d], ny = y + DY[d];
+      seenSet.add(`${nx},${ny}`);
+      stack.push([nx, ny]);
+    }
+  }
+
+  // ---------------- drawing ----------------
+  function geometry() {
+    const pad = 28;
+    const cs = Math.floor((Math.min(canvas.width, canvas.height) - 2 * pad) / n);
+    const ox = Math.floor((canvas.width - cs * n) / 2);
+    const oy = Math.floor((canvas.height - cs * n) / 2);
+    return { cs, ox, oy };
+  }
+  // cell (x,y) -> top-left pixel; y grows upwards on screen
+  function cellRect(x, y) {
+    const { cs, ox, oy } = geometry();
+    return { x: ox + x * cs, y: oy + (n - 1 - y) * cs, cs };
+  }
+  function cellCentre(x, y) { const r = cellRect(x, y); return [r.x + r.cs / 2, r.y + r.cs / 2]; }
+
+  function edgeLine(x, y, d) {
+    const r = cellRect(x, y);
+    const L = r.x, T = r.y, R = r.x + r.cs, B = r.y + r.cs;
+    return { N: [L, T, R, T], E: [R, T, R, B], S: [L, B, R, B], W: [L, T, L, B] }[d];
+  }
+
+  function strokeEdge(x, y, d, color, width, dash) {
+    const [x1, y1, x2, y2] = edgeLine(x, y, d);
+    ctx.save();
+    ctx.strokeStyle = color; ctx.lineWidth = width; ctx.lineCap = 'round';
+    if (dash) ctx.setLineDash(dash);
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    ctx.restore();
+  }
+
+  function badge(x, y, color, text) {
+    const [cx, cy] = cellCentre(x, y);
+    const { cs } = geometry();
+    ctx.beginPath(); ctx.arc(cx, cy, cs * 0.2, 0, Math.PI * 2);
+    ctx.fillStyle = color; ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.font = `700 ${Math.round(cs * 0.2)}px system-ui`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, cx, cy);
+  }
+
+  function drawRobot() {
+    const { cs } = geometry();
+    if (robot.px === null) { [robot.px, robot.py] = cellCentre(robot.x, robot.y); robot.ang = ANGLE[robot.d]; }
+    const s = cs * 0.26;
+    ctx.save();
+    ctx.translate(robot.px, robot.py);
+    ctx.beginPath(); ctx.ellipse(2, s * 0.75, s * 0.8, s * 0.3, 0, 0, Math.PI * 2);   /* shadow stays below */
+    ctx.fillStyle = 'rgba(15,23,42,0.08)'; ctx.fill();
+    ctx.rotate(robot.ang * Math.PI / 180);
+    ctx.beginPath(); ctx.moveTo(s, 0); ctx.lineTo(-s * 0.6, -s * 0.65); ctx.lineTo(-s * 0.6, s * 0.65); ctx.closePath();
+    const g = ctx.createLinearGradient(-s, -s, s, s);
+    g.addColorStop(0, '#60a5fa'); g.addColorStop(1, '#2563eb');
+    ctx.fillStyle = g; ctx.fill();
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(s * 0.9, 0); ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.restore();
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const { cs } = geometry();
+    ctx.font = `${Math.max(10, Math.round(cs * 0.11))}px system-ui`;
+    for (let x = 0; x < n; x++) for (let y = 0; y < n; y++) {
+      const r = cellRect(x, y);
+      ctx.fillStyle = (start && start.x === x && start.y === y) ? '#ecfdf5'
+                    : (goal && goal.x === x && goal.y === y) ? '#fff7ed' : '#f8fafc';
+      ctx.fillRect(r.x + 1, r.y + 1, r.cs - 2, r.cs - 2);
+      ctx.fillStyle = 'rgba(15,23,42,.28)'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+      ctx.fillText(`${x},${y}`, r.x + 12, r.y + 10);
+    }
+    // faint grid
+    for (let x = 0; x < n; x++) for (let y = 0; y < n; y++) for (const d of DIRS) strokeEdge(x, y, d, 'rgba(15,23,42,.06)', 1);
+    // drawn walls, plus disagreements with what the robot sensed
+    const w = Math.max(4, Math.round(cs * 0.06));
+    for (let x = 0; x < n; x++) for (let y = 0; y < n; y++) for (const d of DIRS) {
+      if (d === 'S' && y > 0) continue;              // draw each shared edge once
+      if (d === 'W' && x > 0) continue;
+      const drawn = walls[x][y][d];
+      const robotSays = seen ? seen[x][y][d] : 2;
+      if (drawn && robotSays === 0) strokeEdge(x, y, d, getVar('--warn'), w, [8, 6]);
+      else if (!drawn && robotSays === 1) strokeEdge(x, y, d, getVar('--bad'), w);
+      else if (drawn) strokeEdge(x, y, d, getVar('--wall'), w);
+    }
+    if (start) badge(start.x, start.y, getVar('--ok'), 'S');
+    if (goal) badge(goal.x, goal.y, getVar('--goal'), 'G');
+    drawRobot();
+  }
+  const getVar = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+  function animateRobot(x, y, d) {
+    const [tx, ty] = cellCentre(x, y);
+    const fromX = robot.px ?? tx, fromY = robot.py ?? ty, fromA = robot.ang;
+    let toA = ANGLE[d];
+    let da = ((toA - fromA + 540) % 360) - 180;
+    robot.x = x; robot.y = y; robot.d = d;
+    const t0 = performance.now(), dur = 450;
+    function step(now) {
+      const p = Math.min(1, (now - t0) / dur), e = p < .5 ? 2 * p * p : -1 + (4 - 2 * p) * p;
+      robot.px = fromX + (tx - fromX) * e;
+      robot.py = fromY + (ty - fromY) * e;
+      robot.ang = fromA + da * e;
+      draw();
+      if (p < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
+  // ---------------- serial link ----------------
+  let port = null, writer = null, reader = null, readDone = null, writeDone = null;
+
+  async function connect() {
+    if (!('serial' in navigator)) { setStatus('This browser has no Web Serial. Use Chrome or Edge.', 'bad'); return; }
+    try {
+      port = await navigator.serial.requestPort();
+      setConn('Connecting…', 'busy');
+      await port.open({ baudRate: 9600 });
+    } catch (e) {
+      setConn('Not connected', ''); setStatus('Connection cancelled or failed: ' + e.message, 'warn'); port = null; return;
+    }
+    const enc = new TextEncoderStream();
+    writeDone = enc.readable.pipeTo(port.writable).catch(() => {});
+    writer = enc.writable.getWriter();
+    const dec = new TextDecoderStream();
+    readDone = port.readable.pipeTo(dec.writable).catch(() => {});
+    reader = dec.readable.getReader();
+    setConn('Connected', 'ok');
+    $('connectBtn').textContent = 'Disconnect';
+    setStatus('Connected. Draw the maze, then click Start or Goal.');
+    readLoop();
+    setTimeout(() => { sendMaze(); sendSense(); send('WHERE'); }, 300);
+  }
+
+  async function disconnect() {
+    try { if (reader) await reader.cancel(); await readDone; } catch (e) {}
+    try { if (writer) await writer.close(); await writeDone; } catch (e) {}
+    try { if (port) await port.close(); } catch (e) {}
+    port = writer = reader = null;
+    setConn('Not connected', '');
+    $('connectBtn').textContent = 'Connect robot';
+  }
+
+  async function readLoop() {
+    let buf = '';
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += value;
+        let i;
+        while ((i = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, i).replace(/\r$/, '');
+          buf = buf.slice(i + 1);
+          if (line.length) handleLine(line);
+        }
+      }
+    } catch (e) {
+      setStatus('Bluetooth link lost: ' + e.message, 'bad');
+    }
+    if (port) disconnect();
+  }
+
+  function send(line) {
+    if (!writer) { setStatus('Not connected to the robot.', 'warn'); return false; }
+    writer.write(line + '\r\n');
+    logLine('» ' + line, '#7dd3fc');
+    return true;
+  }
+
+  // ---------------- protocol ----------------
+  function mazeHex() {
+    let s = '';
+    for (let x = 0; x < n; x++) for (let y = 0; y < n; y++) {
+      const c = walls[x][y];
+      s += ((c.N ? 1 : 0) | (c.E ? 2 : 0) | (c.S ? 4 : 0) | (c.W ? 8 : 0)).toString(16).toUpperCase();
+    }
+    return s;
+  }
+  function sendMaze() { if (writer) { seen = null; send(`MAZEDEF ${n} ${mazeHex()}`); draw(); } }
+  function sendSense() { if (writer) send(`WALLUPD ${$('senseChk').checked ? 1 : 0}`); }
+  let mazeTimer = null;
+  function mazeChanged() { draw(); clearTimeout(mazeTimer); mazeTimer = setTimeout(sendMaze, 400); }
+
+  function handleLine(line) {
+    let m;
+    if ((m = line.match(/^\[POS\] (-?\d+) (-?\d+) ([NESW])/))) {
+      const x = +m[1], y = +m[2];
+      if (inside(x, y)) animateRobot(x, y, m[3]);
+      else setStatus(busy ? 'The robot is outside the maze.' : 'Robot is outside the maze.');
+      logLine(line, '#a7f3d0');
+    } else if (line.startsWith('[MAZE] ESCAPED')) {
+      setBusy(false); setStatus('ESCAPED! The robot found the way out.');
+      logLine(line, '#a7f3d0');
+    } else if (line.startsWith('[ESCAPE]')) {
+      if (line.includes('no other exit')) setStatus('The robot came back out of the entry: no other exit found.', 'warn');
+      logLine(line, '#bae6fd');
+    } else if ((m = line.match(/^\[WALLS\] (\d+) ([0-9A-F]+)/))) {
+      parseSeen(+m[1], m[2]); draw();
+    } else if ((m = line.match(/^\[MISMATCH\] (\d+) (\d+) ([NESW]) drawn=(\w+) seen=(\w+)/))) {
+      setStatus(`The robot sensed ${m[5] === 'wall' ? 'a wall' : 'no wall'} at cell ${m[1]},${m[2]} (${m[3]}), unlike the drawing.`, 'warn');
+      logLine(line, '#fcd34d');
+    } else if (line.startsWith('[MAZE] ARRIVED')) {
+      setBusy(false); setStatus(`Arrived at ${robot.x},${robot.y}!`);
+      logLine(line, '#a7f3d0');
+    } else if (line.startsWith('[MAZE] STOPPED')) {
+      setBusy(false); setStatus('The robot stopped before reaching the target.', 'warn');
+      logLine(line, '#fcd34d');
+    } else if (line.startsWith('[SENSOR]')) {
+      const ok = line.includes('OK again');
+      setStatus(ok ? line.slice(9) : `Sensor problem: ${line.slice(9)}. The robot keeps using your drawing there.`, ok ? '' : 'warn');
+      logLine(line, ok ? '#a7f3d0' : '#fcd34d');
+    } else if (line.startsWith('[BUSY]')) {
+      setStatus('The robot is still driving — wait, or press STOP.', 'warn'); logLine(line, '#fcd34d');
+    } else if (line.startsWith('[EV] ABORT')) {
+      setBusy(false); setStatus('A wheel got blocked — check the robot.', 'bad'); logLine(line, '#fca5a5');
+    } else if ((m = line.match(/^Mode: (\w+)/))) {
+      if (m[1] !== 'MAZE') setStatus(`Robot is in ${m[1]} mode — set the DIP switches to SW3 only and reset it.`, 'bad');
+      logLine(line);
+    } else if (line.includes('NO PATH')) {
+      setStatus('No path to the target with these walls.', 'bad'); logLine(line, '#fca5a5');
+    } else {
+      logLine(line);
+    }
+  }
+
+  function parseSeen(size, hex) {
+    if (size !== n || hex.length !== 2 * n * n) return;
+    seen = [];
+    let k = 0;
+    for (let x = 0; x < n; x++) {
+      seen.push([]);
+      for (let y = 0; y < n; y++, k += 2) {
+        const b = parseInt(hex.substr(k, 2), 16);
+        seen[x].push({ N: b & 3, E: (b >> 2) & 3, S: (b >> 4) & 3, W: (b >> 6) & 3 });
+      }
+    }
+  }
+
+  function goTo(x, y) {
+    if (busy) { setStatus('The robot is still driving — wait, or press STOP.', 'warn'); return; }
+    if (send(`GOTO ${x} ${y}`)) { setBusy(true); setStatus(`Driving to ${x},${y}…`); }
+  }
+
+  // ---------------- UI ----------------
+  function setStatus(text, kind) { const s = $('status'); s.textContent = text; s.className = 'status' + (kind ? ' ' + kind : ''); }
+  function setConn(text, kind) { $('connText').textContent = text; $('connDot').className = 'dot ' + (kind || ''); }
+  function setBusy(b) { busy = b; $('robotText').textContent = b ? 'Robot driving' : 'Robot idle'; $('robotDot').className = 'dot ' + (b ? 'busy' : 'ok'); }
+
+  function logLine(text, color) {
+    const log = $('log');
+    const el = document.createElement('div');
+    el.textContent = text;
+    if (color) el.style.color = color;
+    log.appendChild(el);
+    while (log.childNodes.length > 400) log.removeChild(log.firstChild);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  const HINTS = {
+    walls: 'Click on the line between two cells to add or remove a wall.',
+    start: 'Click a cell: the robot drives there first.',
+    goal: 'Click a cell: the robot drives there from where it is now.',
+    pose: 'Pick the direction the robot faces, then click the cell it stands in.',
+  };
+  function setTool(t) {
+    tool = t;
+    document.querySelectorAll('.tool').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
+    $('poseDirs').hidden = t !== 'pose';
+    $('toolHint').textContent = HINTS[t];
+  }
+
+  function canvasPoint(ev) {
+    const r = canvas.getBoundingClientRect();
+    return [(ev.clientX - r.left) * canvas.width / r.width, (ev.clientY - r.top) * canvas.height / r.height];
+  }
+
+  canvas.addEventListener('click', ev => {
+    const [px, py] = canvasPoint(ev);
+    const { cs, ox, oy } = geometry();
+    const x = Math.floor((px - ox) / cs), row = Math.floor((py - oy) / cs), y = n - 1 - row;
+    if (!inside(x, y)) return;
+    if (tool === 'walls') {
+      const lx = px - ox - x * cs, ly = py - oy - row * cs;
+      const dist = { N: ly, S: cs - ly, W: lx, E: cs - lx };
+      const d = DIRS.reduce((a, b) => dist[a] < dist[b] ? a : b);
+      if (dist[d] > cs * 0.3) return;                          // click near an edge only
+      if (isBorder(x, y, d)) { setStatus('The outer border always has walls.', 'warn'); return; }
+      setWall(x, y, d, !walls[x][y][d]);
+      mazeChanged();
+    } else if (tool === 'start') {
+      start = { x, y }; draw(); goTo(x, y);
+    } else if (tool === 'goal') {
+      goal = { x, y }; draw(); goTo(x, y);
+    } else if (tool === 'pose') {
+      if (send(`POSE ${x} ${y} ${poseDir}`)) animateRobot(x, y, poseDir);
+    }
+  });
+
+  document.querySelectorAll('.tool').forEach(b => b.addEventListener('click', () => setTool(b.dataset.tool)));
+  document.querySelectorAll('#poseDirs button').forEach(b => b.addEventListener('click', () => {
+    poseDir = b.dataset.dir;
+    document.querySelectorAll('#poseDirs button').forEach(o => o.classList.toggle('active', o === b));
+  }));
+  $('connectBtn').addEventListener('click', () => port ? disconnect() : connect());
+  $('stopBtn').addEventListener('click', () => { send('STOP'); setBusy(false); });
+  $('escapeBtn').addEventListener('click', () => {
+    if (busy) { setStatus('The robot is still driving — wait, or press STOP.', 'warn'); return; }
+    if (send('ESCAPE')) { setBusy(true); setStatus('Escaping… following the right-hand wall.'); }
+  });
+  $('clearBtn').addEventListener('click', () => { initWalls(n); mazeChanged(); });
+  $('randomBtn').addEventListener('click', () => { randomMaze(); mazeChanged(); setStatus('Build this maze on the floor, then click Start.'); });
+  $('sizeSel').addEventListener('change', e => { initWalls(+e.target.value); start = goal = null; mazeChanged(); });
+  $('sendMazeBtn').addEventListener('click', sendMaze);
+  $('whereBtn').addEventListener('click', () => send('WHERE'));
+  $('senseChk').addEventListener('change', sendSense);
+  const sendCmd = () => { const v = $('cmdInput').value.trim(); if (v) { send(v); $('cmdInput').value = ''; } };
+  $('cmdSend').addEventListener('click', sendCmd);
+  $('cmdInput').addEventListener('keydown', e => { if (e.key === 'Enter') sendCmd(); });
+
+  function fitCanvas() {
+    const wrap = canvas.parentElement;
+    const size = Math.max(280, Math.min(wrap.clientWidth - 24, window.innerHeight - 330, 720));
+    canvas.width = canvas.height = Math.floor(size);
+    robot.px = null;
+    draw();
+  }
+  window.addEventListener('resize', fitCanvas);
+
+  initWalls(3);
+  setTool('walls');
+  fitCanvas();
+})();
+</script>
+</body>
+</html>
