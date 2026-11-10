@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RatRocket Code</title>
+<link rel="stylesheet" href="code.css">
+</head>
+<body>
+
+<!-- The robot in the maze: a top-view render of the real board, facing "up"
+     (-y); code.js moves and rotates it. 100 units = wheel to wheel. Origin is
+     the wheel axle: the point the robot turns about and the point that sits
+     on a cell centre. -->
+<svg width="0" height="0" aria-hidden="true" style="position:absolute">
+  <defs>
+    <g id="bot">
+      <image href="img/robot-maze.png" x="-50" y="-79.1" width="100" height="113.3"/>
+    </g>
+  </defs>
+</svg>
+
+<header class="rail">
+  <a class="brand" href="#" id="brandBtn" title="">
+    <img class="brand-bot" src="img/robot.png" alt="">
+    <span class="brand-text">
+      <strong id="t-title">RatRocket Code</strong>
+      <em id="t-tagline">Programmiere den Roboter aus dem Labyrinth</em>
+    </span>
+  </a>
+
+  <nav class="levelnav" id="levelNav" aria-label="Aufgaben"></nav>
+
+  <div class="rail-end">
+    <span class="link-state" id="linkState"><i class="dot"></i><span id="linkText">Nicht verbunden</span></span>
+    <button class="btn btn-primary" id="connectBtn">Roboter verbinden</button>
+    <button class="info" id="i-connect" data-tip-key="i_connect" aria-label="Info">i</button>
+    <button class="btn btn-ghost" id="langBtn">English</button>
+  </div>
+</header>
+
+<main class="bench">
+
+  <section class="panel palette">
+    <h2><span id="t-palette">Bausteine</span></h2>
+    <div class="palette-list" id="paletteList"></div>
+    <div class="trash" id="trash"><span id="t-trash">Zum L&ouml;schen hierher ziehen</span></div>
+  </section>
+
+  <section class="panel program">
+    <h2>
+      <span id="t-program">Dein Programm</span>
+      <button class="info" data-tip-key="i_program" aria-label="Info">i</button>
+      <span class="count" id="blockCount"></span>
+      <span class="file-btns">
+        <button class="btn btn-sm" id="saveBtn" type="button">
+          <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5v7.2M4.9 6.8 8 9.9l3.1-3.1M2.8 11.2v2.3h10.4v-2.3"/></svg>
+          <span id="t-save">Speichern</span>
+        </button>
+        <button class="btn btn-sm" id="openBtn" type="button">
+          <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.3 4.2h4l1.5 1.6h5.9v7.3H2.3z"/></svg>
+          <span id="t-open">&Ouml;ffnen</span>
+        </button>
+        <button class="info" data-tip-key="i_file" aria-label="Info">i</button>
+      </span>
+    </h2>
+    <input type="file" id="openFile" accept=".json,application/json" hidden>
+    <div class="prog-scroll">
+      <div class="cap cap-start" id="t-start">Start</div>
+      <div class="prog-list" id="progList"></div>
+      <div class="cap cap-end" id="t-end">Ende</div>
+    </div>
+  </section>
+
+  <section class="panel stage">
+    <div class="task" id="taskBox"></div>
+
+    <!-- level 7 only: tools to build the maze -->
+    <div class="sb-bar" id="sbBar" hidden>
+      <div class="sb-group sb-tools">
+        <div class="seg" role="group">
+          <button class="seg-btn sb-ctl" id="sbWalls" type="button" aria-pressed="true">
+            <svg class="ico ico-wall" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.2 12.8V3.2h9.6"/></svg>
+            <span id="t-sbWalls">W&auml;nde</span>
+          </button>
+          <button class="seg-btn sb-ctl" id="sbStart" type="button" aria-pressed="false">
+            <svg class="ico ico-start" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.2l4.6 11.2L8 11l-4.6 2.4z"/></svg>
+            <span id="t-sbStart">Start</span>
+          </button>
+          <button class="seg-btn sb-ctl" id="sbGoal" type="button" aria-pressed="false">
+            <svg class="ico ico-star" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l1.65 4.33 4.63.23-3.62 2.91 1.22 4.47L8 11.2l-3.88 2.54 1.22-4.47-3.62-2.91 4.63-.23z"/></svg>
+            <span id="t-sbGoal">Ziel</span>
+          </button>
+        </div>
+        <button class="info" data-tip-key="i_sandbox" aria-label="Info">i</button>
+      </div>
+      <div class="sb-group">
+        <!-- 3x3 to 32x32, filled in by code.js -->
+        <select class="sb-select sb-ctl" id="sbSize" aria-label="Gr&ouml;&szlig;e"></select>
+        <button class="info" data-tip-key="i_size" aria-label="Info">i</button>
+      </div>
+      <div class="sb-group">
+        <button class="btn btn-sm btn-ghost sb-ctl" id="sbClear" type="button">Leeren</button>
+        <button class="btn btn-sm btn-ghost sb-ctl" id="sbRandom" type="button">Zufall</button>
+        <button class="info" data-tip-key="i_random" aria-label="Info">i</button>
+      </div>
+    </div>
+
+    <div class="screen" id="screen">
+      <svg id="maze" viewBox="0 0 400 400" role="img" aria-label="Labyrinth"></svg>
+      <div class="verdict" id="verdict" hidden></div>
+    </div>
+
+    <div class="controls">
+      <button class="btn btn-go" id="runBtn">Los!</button>
+      <button class="btn" id="stepBtn">Schritt</button>
+      <button class="btn" id="resetBtn">Zur&uuml;ck</button>
+
+      <label class="switch">
+        <input type="checkbox" id="realChk">
+        <span class="switch-track"><span class="switch-knob"></span></span>
+        <span id="t-where">Echter Roboter</span>
+      </label>
+      <button class="info" data-tip-key="i_where" aria-label="Info">i</button>
+
+      <label class="speed">
+        <span id="t-speed">Tempo</span>
+        <input type="range" id="speed" min="1" max="5" value="3">
+        <button class="info" data-tip-key="i_speed" aria-label="Info">i</button>
+      </label>
+    </div>
+  </section>
+</main>
+
+<section class="learn">
+  <article class="card card-robot">
+    <img class="card-bot" id="cardBot" src="img/robot.png" alt="RatRocket">
+    <div>
+      <h3><span id="t-robotCard">Dein Roboter</span>
+        <button class="info" data-tip-key="i_robot" aria-label="Info">i</button></h3>
+      <dl class="specs">
+        <div><dt>STM32F411</dt><dd>100 MHz</dd></div>
+        <div><dt>N20</dt><dd>2 &times;</dd></div>
+        <div><dt id="t-cellLabel">1 Feld</dt><dd>160 mm</dd></div>
+      </dl>
+    </div>
+  </article>
+</section>
+
+<div class="tip" id="tip" hidden></div>
+<div class="ghost" id="ghost" hidden></div>
+<div class="insert" id="insert" hidden></div>
+
+<script src="code-data.js"></script>
+<script src="code.js"></script>
+</body>
+</html>
