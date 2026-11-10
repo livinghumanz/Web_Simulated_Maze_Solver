@@ -78,7 +78,9 @@
     <div class="row">
       <span class="pill"><span id="connDot" class="dot"></span><span id="connText">Not connected</span></span>
       <span class="pill"><span id="robotDot" class="dot"></span><span id="robotText">Robot idle</span></span>
+      <span class="pill"><span id="dispDot" class="dot"></span><span id="dispText">Display off</span></span>
       <button id="connectBtn" class="primary">Connect robot</button>
+      <button id="displayBtn">Connect display</button>
       <button id="stopBtn" class="stop">STOP</button>
     </div>
   </header>
@@ -95,6 +97,7 @@
           <button id="randomBtn">Random maze</button>
         </div>
         <div class="hint">Use the <b>Walls</b> tool and click between two cells to add or remove a wall.
+          Click the outer wall to open the entry and the exit (green dashes).
           Every change is sent to the robot. "Random maze" gives visitors a layout to build.</div>
       </div>
 
@@ -116,9 +119,10 @@
       <div class="card">
         <h2>Escape game</h2>
         <button id="escapeBtn" class="primary" style="width:100%">Escape!</button>
-        <div class="hint">Leave one entry (bottom-left, cell 0,0) and one exit in the outer wall.
-          Put the robot outside, in front of the entry, facing in, then press Escape!
-          It follows the right-hand wall until it is out. No drawing needed.</div>
+        <div class="hint">The entry is the green opening on the left of 0,0. Open one exit in the outer wall
+          (click it). Put the robot outside, in front of the entry, facing in, then press Escape!
+          It keeps its right hand on the wall until it is out. "Clear walls" keeps the entry.</div>
+        <button id="demoBtn" style="width:100%;margin-top:8px">Test display (arrows demo)</button>
       </div>
 
       <div class="card">
@@ -154,6 +158,7 @@
   </main>
 </div>
 
+<script src="kavwv_display.js"></script>
 <script>
 (() => {
   'use strict';
@@ -167,10 +172,161 @@
   let n = 3;
   let walls = [];          // walls[x][y] = {N,E,S,W} booleans, drawn by visitors
   let seen = null;         // robot's belief: seen[x][y][dir] = 0 open, 1 wall, 2 unseen
-  let robot = { x: 0, y: 0, d: 'N', px: null, py: null, ang: -90 };
+  // Escape game entry: an opening in the outer wall of cell (x,y) on side `side`.
+  // The robot starts outside it, facing in. Fixed for the event: left of 0,0.
+  const entry = { x: 0, y: 0, side: 'W' };
+  const entryOutside = () => ({ x: entry.x + DX[entry.side], y: entry.y + DY[entry.side], d: OPP[entry.side] });
+  let robot = Object.assign(entryOutside(), { px: null, py: null, ang: ANGLE[OPP[entry.side]] });
   let start = null, goal = null;
   let tool = 'walls', poseDir = 'N';
   let busy = false;
+
+  // ---------------- round display (KAVWV, BLE) ----------------
+  // Kids' "mini-city" scale: one maze cell is shown as 100 m on the display.
+  const KD = window.KavwvDisplay;
+  const CITY_M_PER_CELL = 100;
+  const disp = KD ? new KD.Link(onDisplayStatus) : null;
+  let run = { kind: null, target: null, cells: 0, visited: new Set(), startDist: 0 };
+  let pose = entryOutside();           // robot pose from [POS], also outside the maze
+
+  // Route line on the display: trail (grey) -> robot -> route ahead (dark),
+  // heading-up like a navigation app, 3 m per pixel (one 100 m cell ~ 33 px).
+  const MPP = 3;
+  const STEP = { N: [0, 1], E: [1, 0], S: [0, -1], W: [-1, 0] };   // (x east, y north)
+  const RIGHT_OF = { N: 'E', E: 'S', S: 'W', W: 'N' };
+  const LEFT_OF = { N: 'W', W: 'S', S: 'E', E: 'N' };
+  const BACK_OF = { N: 'S', S: 'N', E: 'W', W: 'E' };
+  let trail = [];   // cells driven, oldest first
+  let ahead = [];   // planned cells after the current one
+
+  function updateRoute() {
+    if (!disp || !KD) return;
+    const route = KD.mazeRoute(trail, pose, ahead, CITY_M_PER_CELL, MPP);
+    if (disp.connected) disp.setRoute(route); else disp.route = route;
+  }
+  // Shortest path on the drawn maze (for GOTO), cells after `from` up to `to`.
+  function plannedPath(from, to) {
+    if (!inside(from.x, from.y) || !inside(to.x, to.y)) return [];
+    const key = c => `${c.x},${c.y}`;
+    const prev = new Map([[key(from), null]]);
+    const q = [from];
+    while (q.length) {
+      const c = q.shift();
+      if (c.x === to.x && c.y === to.y) break;
+      for (const d of DIRS) {
+        const nx = c.x + DX[d], ny = c.y + DY[d];
+        if (!inside(nx, ny) || walls[c.x][c.y][d] || prev.has(`${nx},${ny}`)) continue;
+        prev.set(`${nx},${ny}`, c);
+        q.push({ x: nx, y: ny });
+      }
+    }
+    if (!prev.has(key(to))) return [];
+    const path = [];
+    for (let c = to; c && key(c) !== key(from); c = prev.get(key(c))) path.unshift(c);
+    return path;
+  }
+  // Heading sent with every NavCore; animated during turns so the display
+  // swings the route round smoothly (it rotates the last route by the
+  // difference to the heading it had when that route arrived).
+  let curHeading = KD ? KD.HEADING[pose.d] : 0xFF;
+  let headingAnim = null;
+  const TURN_ANIM_MS = { RIGHT: 1500, LEFT: 1500, UTURN: 2500 };
+  function stopHeadingAnim() { if (headingAnim) { clearInterval(headingAnim); headingAnim = null; } }
+  function setHeading(h) {
+    curHeading = ((Math.round(h) % 180) + 180) % 180;
+    if (disp && disp.connected) disp.setHeading(curHeading); else if (disp) disp.nav.heading = curHeading;
+  }
+  function animateHeading(action) {
+    stopHeadingAnim();
+    if (!KD || !TURN_ANIM_MS[action]) return;
+    const from = curHeading;
+    const delta = action === 'LEFT' ? -45 : action === 'RIGHT' ? 45 : 90;   // 2-degree units
+    const steps = Math.max(1, Math.round(TURN_ANIM_MS[action] / 66));
+    let i = 0;
+    headingAnim = setInterval(() => {
+      i++;
+      setHeading(from + delta * i / steps);
+      if (i >= steps) stopHeadingAnim();
+    }, 66);
+  }
+
+  function onDecision(action) {
+    const dir = { FORWARD: pose.d, RIGHT: RIGHT_OF[pose.d], LEFT: LEFT_OF[pose.d], UTURN: BACK_OF[pose.d] }[action];
+    if (!dir) return;
+    const next = { x: pose.x + STEP[dir][0], y: pose.y + STEP[dir][1] };
+    if (run.kind === 'goto' && run.target) {
+      const rest = plannedPath(next, run.target);
+      ahead = [next, ...rest];
+    } else {
+      ahead = [next];
+    }
+    updateRoute();
+    animateHeading(action);
+  }
+  function onPose(x, y, d) {
+    const moved = x !== pose.x || y !== pose.y;
+    if (moved) {
+      trail.push({ x: pose.x, y: pose.y });
+      run.cells++;
+      run.visited.add(`${x},${y}`);
+      if (ahead.length && ahead[0].x === x && ahead[0].y === y) ahead.shift(); else ahead = [];
+    }
+    pose = { x, y, d };
+    if (KD && KD.HEADING[d] !== curHeading) { stopHeadingAnim(); setHeading(KD.HEADING[d]); }
+    updateRoute();
+  }
+
+  const manhattan = (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+  function runProgress() {
+    if (run.kind === 'goto' && run.target) {
+      if (!run.startDist) return 100;
+      return Math.max(0, Math.min(100, Math.round(100 * (1 - manhattan(pose, run.target) / run.startDist))));
+    }
+    return Math.min(100, Math.round(100 * run.visited.size / (n * n)));
+  }
+  function runRemaining() {
+    return run.kind === 'goto' && run.target ? manhattan(pose, run.target) * CITY_M_PER_CELL
+                                             : run.cells * CITY_M_PER_CELL;   // escape: distance driven
+  }
+  function showOnDisplay(fields) {
+    if (!disp) return;
+    fields = Object.assign({ heading: curHeading }, fields);
+    if (disp.connected) disp.setNav(fields); else disp.nav = fields;
+  }
+  function displayReady() {
+    if (KD) showOnDisplay({ maneuver: KD.MANEUVER.DEPART, dist: 0xFFFF, remaining: runRemaining(), progress: runProgress() });
+  }
+  function displayStep(action) {
+    if (!KD) return;
+    const m = { FORWARD: KD.MANEUVER.STRAIGHT, RIGHT: KD.MANEUVER.RIGHT, LEFT: KD.MANEUVER.LEFT, UTURN: KD.MANEUVER.UTURN }[action];
+    if (m === undefined) return;
+    showOnDisplay({ maneuver: m, dist: action === 'FORWARD' ? CITY_M_PER_CELL : 0,
+                    remaining: runRemaining(), progress: runProgress() });
+  }
+  function displayFinish() {
+    ahead = [];
+    updateRoute();
+    if (KD) showOnDisplay({ maneuver: KD.MANEUVER.ARRIVE, dist: 0, remaining: run.kind === 'goto' ? 0 : runRemaining(), progress: 100 });
+  }
+  function displayStopped() {
+    if (KD) showOnDisplay({ maneuver: KD.MANEUVER.NONE, dist: 0xFFFF, remaining: runRemaining(), progress: runProgress() });
+  }
+  function startRun(kind, target) {
+    run = { kind, target: target || null, cells: 0, visited: new Set([`${pose.x},${pose.y}`]),
+            startDist: target ? manhattan(pose, target) : 0 };
+    trail = [];
+    ahead = target ? plannedPath(pose, target) : [];
+    displayReady();
+    updateRoute();
+  }
+  function onDisplayStatus(state, detail) {
+    const dot = document.getElementById('dispDot'), txt = document.getElementById('dispText');
+    const btn = document.getElementById('displayBtn');
+    if (state === 'connected') { dot.className = 'dot ok'; txt.textContent = detail || 'Display on'; btn.textContent = 'Disconnect display'; }
+    else if (state === 'connecting') { dot.className = 'dot busy'; txt.textContent = 'Display…'; }
+    else if (state === 'error') { logLine('[display] ' + detail, '#fca5a5'); }
+    else { dot.className = 'dot'; txt.textContent = 'Display off'; btn.textContent = 'Connect display'; }
+  }
 
   const canvas = document.getElementById('maze');
   const ctx = canvas.getContext('2d');
@@ -185,23 +341,55 @@
         walls[x].push({ N: y === n - 1, E: x === n - 1, S: y === 0, W: x === 0 });
       }
     }
+    walls[entry.x][entry.y][entry.side] = false;   // the entry stays open
     seen = null;
-    if (robot.x >= n || robot.y >= n) { robot.x = 0; robot.y = 0; }
-    robot.px = null;
+    Object.assign(robot, entryOutside(), { px: null });   // robot waits outside the entry
   }
 
   const inside = (x, y) => x >= 0 && y >= 0 && x < n && y < n;
   const isBorder = (x, y, d) => !inside(x + DX[d], y + DY[d]);
 
+  // ESCAPE runs in the robot's own frame: it drives in "north" into cell
+  // (ENTRY, 0), ENTRY counted from its left. These map that onto the drawing.
+  const entryHeading = () => OPP[entry.side];
+  function entryIndex() {
+    const L = LEFT_OF[entryHeading()];
+    let k = 0, x = entry.x, y = entry.y;
+    while (inside(x + DX[L], y + DY[L])) { x += DX[L]; y += DY[L]; k++; }
+    return k;
+  }
+  function fromEscapeFrame(x, y, d) {
+    const h = entryHeading(), r = RIGHT_OF[h], k = entryIndex();
+    return { x: entry.x + y * DX[h] + (x - k) * DX[r],
+             y: entry.y + y * DY[h] + (x - k) * DY[r],
+             d: DIRS[(DIRS.indexOf(d) + DIRS.indexOf(h)) % 4] };
+  }
+
+  // Keep the drawing across page reloads (this browser only).
+  const STORE_KEY = 'ratrocket.maze';
+  function saveLocal() { try { localStorage.setItem(STORE_KEY, JSON.stringify({ n, walls })); } catch (e) {} }
+  function loadLocal() {
+    try {
+      const s = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
+      if (!s || !(s.n >= 2 && s.n <= 5) || !Array.isArray(s.walls) || s.walls.length !== s.n
+          || s.walls.some(col => !Array.isArray(col) || col.length !== s.n)) return false;
+      initWalls(s.n);
+      walls = s.walls;
+      walls[entry.x][entry.y][entry.side] = false;
+      $('sizeSel').value = String(s.n);
+      return true;
+    } catch (e) { return false; }
+  }
+
   function setWall(x, y, d, on) {
-    if (isBorder(x, y, d)) return;              // the outer border is always closed
     walls[x][y][d] = on;
+    if (isBorder(x, y, d)) return;   // outer border: entry/exit opening, drawing only (robot keeps it closed)
     walls[x + DX[d]][y + DY[d]][OPP[d]] = on;
   }
 
   function randomMaze() {
     initWalls(n);
-    for (let x = 0; x < n; x++) for (let y = 0; y < n; y++) for (const d of DIRS) setWall(x, y, d, true);
+    for (let x = 0; x < n; x++) for (let y = 0; y < n; y++) for (const d of DIRS) if (!isBorder(x, y, d)) setWall(x, y, d, true);
     const seenSet = new Set(['0,0']);
     const stack = [[0, 0]];
     while (stack.length) {
@@ -218,8 +406,8 @@
 
   // ---------------- drawing ----------------
   function geometry() {
-    const pad = 28;
-    const cs = Math.floor((Math.min(canvas.width, canvas.height) - 2 * pad) / n);
+    // Margin of ~0.6 cell all round: room for the robot outside the entry / exit.
+    const cs = Math.floor(Math.min(canvas.width, canvas.height) / (n + 1.2));
     const ox = Math.floor((canvas.width - cs * n) / 2);
     const oy = Math.floor((canvas.height - cs * n) / 2);
     return { cs, ox, oy };
@@ -230,6 +418,13 @@
     return { x: ox + x * cs, y: oy + (n - 1 - y) * cs, cs };
   }
   function cellCentre(x, y) { const r = cellRect(x, y); return [r.x + r.cs / 2, r.y + r.cs / 2]; }
+  // Where to draw the robot: cell centre, or just outside the outer wall.
+  function robotPoint(x, y) {
+    if (inside(x, y)) return cellCentre(x, y);
+    const cx = Math.min(n - 1, Math.max(0, x)), cy = Math.min(n - 1, Math.max(0, y));
+    const [px, py] = cellCentre(cx, cy), { cs } = geometry();
+    return [px + Math.sign(x - cx) * cs * 0.8, py - Math.sign(y - cy) * cs * 0.8];   // screen y grows down
+  }
 
   function edgeLine(x, y, d) {
     const r = cellRect(x, y);
@@ -257,7 +452,7 @@
 
   function drawRobot() {
     const { cs } = geometry();
-    if (robot.px === null) { [robot.px, robot.py] = cellCentre(robot.x, robot.y); robot.ang = ANGLE[robot.d]; }
+    if (robot.px === null) { [robot.px, robot.py] = robotPoint(robot.x, robot.y); robot.ang = ANGLE[robot.d]; }
     const s = cs * 0.26;
     ctx.save();
     ctx.translate(robot.px, robot.py);
@@ -293,7 +488,8 @@
       if (d === 'W' && x > 0) continue;
       const drawn = walls[x][y][d];
       const robotSays = seen ? seen[x][y][d] : 2;
-      if (drawn && robotSays === 0) strokeEdge(x, y, d, getVar('--warn'), w, [8, 6]);
+      if (!drawn && isBorder(x, y, d)) strokeEdge(x, y, d, getVar('--ok'), w, [4, 10]);   // entry / exit
+      else if (drawn && robotSays === 0) strokeEdge(x, y, d, getVar('--warn'), w, [8, 6]);
       else if (!drawn && robotSays === 1) strokeEdge(x, y, d, getVar('--bad'), w);
       else if (drawn) strokeEdge(x, y, d, getVar('--wall'), w);
     }
@@ -304,7 +500,7 @@
   const getVar = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 
   function animateRobot(x, y, d) {
-    const [tx, ty] = cellCentre(x, y);
+    const [tx, ty] = robotPoint(x, y);
     const fromX = robot.px ?? tx, fromY = robot.py ?? ty, fromA = robot.ang;
     let toA = ANGLE[d];
     let da = ((toA - fromA + 540) % 360) - 180;
@@ -343,7 +539,8 @@
     $('connectBtn').textContent = 'Disconnect';
     setStatus('Connected. Draw the maze, then click Start or Goal.');
     readLoop();
-    setTimeout(() => { sendMaze(); sendSense(); send('WHERE'); }, 300);
+    /* No WHERE here: the robot's idle position would pull the icon off the entry. */
+    setTimeout(() => { sendMaze(); sendSense(); }, 300);
   }
 
   async function disconnect() {
@@ -386,24 +583,32 @@
   function mazeHex() {
     let s = '';
     for (let x = 0; x < n; x++) for (let y = 0; y < n; y++) {
-      const c = walls[x][y];
-      s += ((c.N ? 1 : 0) | (c.E ? 2 : 0) | (c.S ? 4 : 0) | (c.W ? 8 : 0)).toString(16).toUpperCase();
+      // The robot's map always has a closed border (entry/exit openings are for the screen only).
+      const w = d => walls[x][y][d] || isBorder(x, y, d);
+      s += ((w('N') ? 1 : 0) | (w('E') ? 2 : 0) | (w('S') ? 4 : 0) | (w('W') ? 8 : 0)).toString(16).toUpperCase();
     }
     return s;
   }
   function sendMaze() { if (writer) { seen = null; send(`MAZEDEF ${n} ${mazeHex()}`); draw(); } }
   function sendSense() { if (writer) send(`WALLUPD ${$('senseChk').checked ? 1 : 0}`); }
   let mazeTimer = null;
-  function mazeChanged() { draw(); clearTimeout(mazeTimer); mazeTimer = setTimeout(sendMaze, 400); }
+  function mazeChanged() { draw(); saveLocal(); clearTimeout(mazeTimer); mazeTimer = setTimeout(sendMaze, 400); }
 
   function handleLine(line) {
     let m;
+    if ((m = line.match(/^\[CELL\].*-> (?:\(\d+,\d+\) )?(FORWARD|RIGHT|LEFT|UTURN)/))) {
+      displayStep(m[1]);
+      onDecision(m[1]);
+    }
     if ((m = line.match(/^\[POS\] (-?\d+) (-?\d+) ([NESW])/))) {
-      const x = +m[1], y = +m[2];
-      if (inside(x, y)) animateRobot(x, y, m[3]);
-      else setStatus(busy ? 'The robot is outside the maze.' : 'Robot is outside the maze.');
+      let x = +m[1], y = +m[2], d = m[3];
+      if (run.kind === 'escape') ({ x, y, d } = fromEscapeFrame(x, y, d));
+      onPose(x, y, d);
+      animateRobot(x, y, d);
+      if (!inside(x, y) && !busy) setStatus('Robot is outside the maze.');
       logLine(line, '#a7f3d0');
     } else if (line.startsWith('[MAZE] ESCAPED')) {
+      displayFinish();
       setBusy(false); setStatus('ESCAPED! The robot found the way out.');
       logLine(line, '#a7f3d0');
     } else if (line.startsWith('[ESCAPE]')) {
@@ -415,9 +620,11 @@
       setStatus(`The robot sensed ${m[5] === 'wall' ? 'a wall' : 'no wall'} at cell ${m[1]},${m[2]} (${m[3]}), unlike the drawing.`, 'warn');
       logLine(line, '#fcd34d');
     } else if (line.startsWith('[MAZE] ARRIVED')) {
+      displayFinish();
       setBusy(false); setStatus(`Arrived at ${robot.x},${robot.y}!`);
       logLine(line, '#a7f3d0');
     } else if (line.startsWith('[MAZE] STOPPED')) {
+      displayStopped();
       setBusy(false); setStatus('The robot stopped before reaching the target.', 'warn');
       logLine(line, '#fcd34d');
     } else if (line.startsWith('[SENSOR]')) {
@@ -440,20 +647,26 @@
 
   function parseSeen(size, hex) {
     if (size !== n || hex.length !== 2 * n * n) return;
-    seen = [];
+    seen = Array.from({ length: n }, () => Array.from({ length: n }, () => ({ N: 2, E: 2, S: 2, W: 2 })));
+    // Only during an escape run is the robot's map in its own frame; after a
+    // MAZEDEF (e.g. on reconnect) it is in the drawing's frame again.
+    const esc = busy && run.kind === 'escape';
     let k = 0;
     for (let x = 0; x < n; x++) {
-      seen.push([]);
       for (let y = 0; y < n; y++, k += 2) {
         const b = parseInt(hex.substr(k, 2), 16);
-        seen[x].push({ N: b & 3, E: (b >> 2) & 3, S: (b >> 4) & 3, W: (b >> 6) & 3 });
+        const v = { N: b & 3, E: (b >> 2) & 3, S: (b >> 4) & 3, W: (b >> 6) & 3 };
+        for (const d of DIRS) {
+          const p = esc ? fromEscapeFrame(x, y, d) : { x, y, d };   // escape: robot frame -> drawing
+          if (inside(p.x, p.y)) seen[p.x][p.y][p.d] = v[d];
+        }
       }
     }
   }
 
   function goTo(x, y) {
     if (busy) { setStatus('The robot is still driving — wait, or press STOP.', 'warn'); return; }
-    if (send(`GOTO ${x} ${y}`)) { setBusy(true); setStatus(`Driving to ${x},${y}…`); }
+    if (send(`GOTO ${x} ${y}`)) { startRun('goto', { x, y }); setBusy(true); setStatus(`Driving to ${x},${y}…`); }
   }
 
   // ---------------- UI ----------------
@@ -472,7 +685,7 @@
   }
 
   const HINTS = {
-    walls: 'Click on the line between two cells to add or remove a wall.',
+    walls: 'Click on the line between two cells to add or remove a wall. Click the outer wall to open the entry and the exit.',
     start: 'Click a cell: the robot drives there first.',
     goal: 'Click a cell: the robot drives there from where it is now.',
     pose: 'Pick the direction the robot faces, then click the cell it stands in.',
@@ -492,15 +705,20 @@
   canvas.addEventListener('click', ev => {
     const [px, py] = canvasPoint(ev);
     const { cs, ox, oy } = geometry();
-    const x = Math.floor((px - ox) / cs), row = Math.floor((py - oy) / cs), y = n - 1 - row;
+    let x = Math.floor((px - ox) / cs), row = Math.floor((py - oy) / cs);
+    const m = cs * 0.3;   // the outer wall line is half outside the grid: still counts as a click on it
+    if (tool === 'walls' && px >= ox - m && px < ox + n * cs + m && py >= oy - m && py < oy + n * cs + m) {
+      x = Math.min(n - 1, Math.max(0, x)); row = Math.min(n - 1, Math.max(0, row));
+    }
+    const y = n - 1 - row;
     if (!inside(x, y)) return;
     if (tool === 'walls') {
       const lx = px - ox - x * cs, ly = py - oy - row * cs;
       const dist = { N: ly, S: cs - ly, W: lx, E: cs - lx };
       const d = DIRS.reduce((a, b) => dist[a] < dist[b] ? a : b);
-      if (dist[d] > cs * 0.3) return;                          // click near an edge only
-      if (isBorder(x, y, d)) { setStatus('The outer border always has walls.', 'warn'); return; }
+      if (dist[d] > m) return;                                 // click near an edge only
       setWall(x, y, d, !walls[x][y][d]);
+      if (isBorder(x, y, d)) setStatus(walls[x][y][d] ? 'Outer wall closed.' : 'Opening in the outer wall (entry or exit).');
       mazeChanged();
     } else if (tool === 'start') {
       start = { x, y }; draw(); goTo(x, y);
@@ -517,12 +735,52 @@
     document.querySelectorAll('#poseDirs button').forEach(o => o.classList.toggle('active', o === b));
   }));
   $('connectBtn').addEventListener('click', () => port ? disconnect() : connect());
+  // Cycles the arrows on the round display without the robot (check the link,
+  // and something to look at while visitors wait).
+  let demoTimer = null;
+  $('demoBtn').addEventListener('click', () => {
+    if (!disp || !disp.connected) { setStatus('Connect the display first.', 'warn'); return; }
+    if (demoTimer) { clearInterval(demoTimer); demoTimer = null; $('demoBtn').textContent = 'Test display (arrows demo)'; displayReady(); return; }
+    const M = KD.MANEUVER;
+    const steps = [[M.STRAIGHT, 100], [M.LEFT, 0], [M.STRAIGHT, 100], [M.RIGHT, 0], [M.UTURN, 0], [M.ARRIVE, 0]];
+    let i = 0;
+    demoTimer = setInterval(() => {
+      const [maneuver, dist] = steps[i % steps.length];
+      showOnDisplay({ maneuver, dist, remaining: (steps.length - 1 - (i % steps.length)) * CITY_M_PER_CELL,
+                      progress: Math.round(100 * (i % steps.length) / (steps.length - 1)) });
+      i++;
+    }, 1500);
+    $('demoBtn').textContent = 'Stop display demo';
+  });
+
+  $('displayBtn').addEventListener('click', async () => {
+    if (!disp) { setStatus('kavwv_display.js is missing next to this page.', 'bad'); return; }
+    if (disp.connected) { disp.disconnect(); onDisplayStatus('disconnected'); return; }
+    try { displayReady(); await disp.connect(); }
+    catch (e) { onDisplayStatus('disconnected'); setStatus('Display: ' + e.message, 'warn'); }
+  });
   $('stopBtn').addEventListener('click', () => { send('STOP'); setBusy(false); });
   $('escapeBtn').addEventListener('click', () => {
     if (busy) { setStatus('The robot is still driving — wait, or press STOP.', 'warn'); return; }
-    if (send('ESCAPE')) { setBusy(true); setStatus('Escaping… following the right-hand wall.'); }
+    if (!send(`ENTRY ${entryIndex()}`)) return;   // the robot's entry number for this drawing
+    resetToEntry();
+    seen = null; draw();                         // fresh wall colours for this run
+    send('ESCAPE'); startRun('escape'); setBusy(true); setStatus('Escaping… following the right-hand wall.');
   });
-  $('clearBtn').addEventListener('click', () => { initWalls(n); mazeChanged(); });
+  // Robot icon, display route and heading back to "outside the entry, facing in".
+  function resetToEntry() {
+    const o = entryOutside();
+    pose = Object.assign({}, o);
+    trail = []; ahead = [];
+    animateRobot(o.x, o.y, o.d);
+    stopHeadingAnim();
+    if (KD) setHeading(KD.HEADING[o.d]);
+    updateRoute();
+  }
+  $('clearBtn').addEventListener('click', () => {
+    if (busy) { setStatus('The robot is still driving — wait, or press STOP.', 'warn'); return; }
+    initWalls(n); resetToEntry(); mazeChanged();
+  });
   $('randomBtn').addEventListener('click', () => { randomMaze(); mazeChanged(); setStatus('Build this maze on the floor, then click Start.'); });
   $('sizeSel').addEventListener('change', e => { initWalls(+e.target.value); start = goal = null; mazeChanged(); });
   $('sendMazeBtn').addEventListener('click', sendMaze);
@@ -542,6 +800,7 @@
   window.addEventListener('resize', fitCanvas);
 
   initWalls(3);
+  loadLocal();
   setTool('walls');
   fitCanvas();
 })();
