@@ -48,8 +48,12 @@ matching the CubeMX project. The first 64 KB hold the USB bootloader, the last
 | Right (Motor1_Encoder) | PA15 / PB3 | TIM2 | counts down when driving forward → sign flipped in firmware |
 | Left (Motor2_Encoder) | PB6 / PB7 | TIM4 | |
 
-**Measured:** ≈2503 (left) / 2517 (right) counts per wheel turn, wheel Ø34 mm
-→ ≈23.5 counts per mm.
+**Measured:** first estimate by eye-counting wheel turns gave ≈2503/2517
+counts per turn (≈23.5 counts/mm) - too low. The floor-ruler calibration of
+2026-11-06 (`CALDIST`, drive 300 mm and measure) settled on **2874 counts per
+wheel turn → ≈26.9 counts per mm** (wheel Ø34 mm); that value is what the
+firmware uses (`ENC_CPR` in motion.h). A nice classroom research question:
+measure it yourself and see which method you trust.
 
 ### Power
 

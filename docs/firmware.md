@@ -203,9 +203,9 @@ Kept small on purpose:
   Fine-tune at runtime in maze mode with `CALDIST` and `TRIM`.
 - Default gains (tuned with the wheels lifted, USB power):
   `KP 3, KI 6, KD 0.05, KFF 0.14, KS 130`.
-- A move is aborted ("following error") if a wheel falls ~128 mm behind its
-  target, e.g. when it is blocked.
-- **Left motor cannot reverse yet** (board fault, see hardware.md):
+- A move is aborted ("following error") if a wheel falls ~37 mm behind its
+  target (1000 counts at 26.9 counts/mm), e.g. when it is blocked.
+- Left motor reverse was repaired on 2026-11-07 (see hardware.md):
   `MOTION_LEFT_CAN_REVERSE 0` in `motion.h`. Left wheel only drives forward or
   coasts; left in-place turns are done as 270° right turns. Set the flag to 1
   after the repair.
@@ -233,6 +233,7 @@ nominal pitch; the next wall it sees corrects the error.
 | Calibration | `CALSPIN`, `CENTER`, `CAL`, `THR <front> <side>`, `CALDIST <commanded mm> <actual mm>`, `TRIM <pct>` (+ if it curves left) |
 | Single moves | `FWD <mm> [v]`, `TURN <deg> [v]` (spin, + = clockwise), `PIVOT <deg> [v]`, `CELL`, `STOP` |
 | Escape | `ESCAPE`, `ENTRY <n>`, `BTN ESCAPE\|GO` (what the PB2 button starts) |
+| Push game | `PUSH` (motors off, push the robot by hand; encoders track it; `STOP` ends) |
 | Maze | `GO`, `GOTO <x> <y>`, `POSE <x> <y> <N\|E\|S\|W>`, `RESETMAP`, `MAP`, `WHERE`, `MAZEDEF <n> <hex>`, `WALLSREP` |
 | Settings | `SIZE`, `GOAL`, `PITCH`, `TRACK`, `VRUN`, `VTURN`, `KC <p> <d>`, `HOME 0\|1`, `ALIGN 0\|1`, `SENSE 0\|1`, `WALLUPD 0\|1`, `PIVOTS 0\|1`, `CFG` |
 | Keep settings | `SAVE` (to MCU flash, survives power-off; robot freezes ~2 s), `LOAD`, `DEFAULTS` (also erases the saved copy) |
@@ -308,7 +309,7 @@ left 1-2° over. Escape run with spins: ESCAPED, front stops at 32-37 mm
 (target 33), side readings 45-54 mm (target 48). The pivot notes below
 are kept for reference.
 
-- **Pivot turn** (`PIVOTS 1`, default for left and right turns): the inner
+- **Pivot turn** (`PIVOTS 1`; the default is spins since 2026-11-07): the inner
   wheel stays still and only the outer wheel drives forward, along an arc as
   wide as the track. It needs **no reverse** (works with the left-motor fault),
   is more repeatable, and needs less room than a spin: in a 16 cm cell about
