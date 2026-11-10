@@ -2,20 +2,20 @@
 #define DFU_H
 
 /*
- * Enter the STM32's built-in USB DFU bootloader from the running firmware,
- * so the board can be flashed over its USB-C port without pressing BOOT0:
+ * Firmware update over USB-C with the tinyuf2 bootloader, which lives in the
+ * first 64 KB of flash and starts this program at 0x08010000:
  *
- *   send "DFU" over Bluetooth  ->  Windows shows "STM32 BOOTLOADER"
- *   STM32_Programmer_CLI -c port=USB1 -w firmware.elf -v -go
+ *   send "UPDATE" (or "DFU") over Bluetooth or USB serial,
+ *   or double-press the reset button
+ *     -> Windows shows a USB drive named RATROCKET
+ *   copy build/Debug/ratrocket.uf2 onto the drive
+ *     -> the bootloader flashes it and restarts the robot
  *
- * A reset or power-cycle returns to the normal firmware, so nothing can be
- * bricked.
+ * Saved settings (flash sector 7) are not touched. Pressing reset while the
+ * drive is shown returns to the current firmware, so nothing can be bricked.
  */
 
-/* Request the bootloader and reset the chip. Never returns. */
+/* Ask the bootloader to stay in UF2 mode and reset the chip. Never returns. */
 void Dfu_Enter(void);
-
-/* Call first thing in main(): jumps to the bootloader if it was requested. */
-void Dfu_CheckAtStartup(void);
 
 #endif /* DFU_H */

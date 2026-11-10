@@ -8,7 +8,8 @@ plus what was measured on the real board. Schematic = what the PDF says;
 
 MCU: the schematic says STM32F411**RC**T6 (256 KB flash), but the fitted chip
 reports **512 KB** (flash-size register 0x1FFF7A22 = 0x0200), i.e. an F411**RE**,
-matching the CubeMX project. The last 128 KB sector is used for saved settings.
+matching the CubeMX project. The first 64 KB hold the USB bootloader, the last
+128 KB sector the saved settings (flash map in [firmware.md](firmware.md#flash-map)).
 
 ### Motors and driver (DRV8833 module, U8)
 
@@ -28,6 +29,16 @@ matching the CubeMX project. The last 128 KB sector is used for saved settings.
   back via GPIOB IDR), but the left motor never sees it: it cannot reverse, and
   "brake" drives it forward. Suspect the PB1 → module IN3 link (MCU pin 27
   joint, trace, or the module header pin). Right motor brakes/reverses fine.
+- **Repaired 2026-11-07:** PB1 → IN3 re-soldered. The first attempt shorted
+  the driver supply (board heated on USB-C only; D6 was lifted to isolate it,
+  then the short was removed and D6 refitted). Verified: `DECEL L` reverse
+  stops the left wheel in 24 counts / 17 ms. SWEEP after the repair: the left
+  needs ~110 more duty than the right at low/medium speed (duty 400: L 820 /
+  R 1674 counts/s, equal near full duty) → `MOTION_KSTATIC_LEFT_EXTRA`.
+  `FAULT` (PC13) reads 0 even while both bridges drive - not meaningful.
+- If the driver ever shorts again: `MOTOR_OUTPUTS_ENABLED 0` in `motor.h` puts
+  the four driver inputs in analog mode, and lifting D6 cuts the driver off
+  the 5 V side; the push game (`PUSH`) then still works.
 - Driver VCC = Battery_VCC through D6 (1N4007, bypass jumper JP6).
 
 ### Encoders (N20 motors with magnetic encoders)
@@ -62,20 +73,30 @@ matching the CubeMX project. The last 128 KB sector is used for saved settings.
   Only 3 of the 4 switches work (user); modes use SW1–SW3.
 - Buttons: NRST (reset); MCU_Boot_1 = BOOT0 (do not use); **MCU_Boot_2 = PB2
   push-button, 10 k pull-down, active high** — usable as a "start" button.
-- RGB LED (LED1 + U9): RGB_Red PC8, RGB_Green PC9, RGB_Blue PB5, active high.
+- RGB LED (LED1 + U9): RGB_Red PC8, RGB_Green PC9, RGB_Blue PB5, active high
+  (anodes through 470 Ω to the pins, common cathode to GND). The USB
+  bootloader uses blue.
 
-### Flashing over USB-C (not working yet)
+### Flashing over USB-C
 
-- The STM32F411 ROM bootloader supports USB DFU on PA11/PA12, and the USB-C
-  data lines are wired there; the firmware's own USB serial port (COM9,
-  VID 0483 PID 5740) proves the USB path works.
-- The BOOT0 push-button works, and the `DFU` command (`dfu.c`) gets into the
-  bootloader, but only while BOOT0 is held: this chip's bootloader resets
-  itself (RCC_CSR: software reset) when BOOT0 is low.
-- In the bootloader, USB enumeration fails ("Device Descriptor Request
-  Failed", VID 0000 PID 0002) - the known STM32F411 + 25 MHz HSE bootloader
-  issue. Not fixed by replugging. Flash with the ST-Link (a 20–30 cm SWD cable
-  is fine).
+- Works since 2026-11-10 with the **tinyuf2** bootloader in the first 64 KB of
+  flash: `UPDATE` or a double-press of reset shows a USB drive named RATROCKET,
+  and copying a `.uf2` file onto it flashes the robot. See
+  [firmware.md](firmware.md#flashing). The ST-Link (a 20–30 cm SWD cable is
+  fine) remains the recovery path.
+- ST's ROM bootloader is still unusable, so do not use BOOT0: USB DFU on
+  PA11/PA12 only runs while BOOT0 is held (the chip's bootloader resets itself,
+  RCC_CSR software reset, when BOOT0 is low), and its USB enumeration then
+  fails ("Device Descriptor Request Failed", VID 0000 PID 0002) - the known
+  STM32F411 + 25 MHz HSE bootloader issue. Not fixed by replugging.
+- tinyuf2 had to use the application's clock tree (25 MHz / 15 × 144 / 6 =
+  40 MHz core, / 5 = 48 MHz USB). With tinyuf2's usual F411 setting (1 MHz PLL
+  input, 84 MHz, voltage scale 2, 2 wait states) it crashed at random during
+  start-up (corrupted instruction fetches) in 2 of its 3 starts; with the
+  slower clock none of 40+ starts failed.
+- **Measured 2026-11-10:** VDDA = 3.29 V on USB power (internal VREFINT via
+  SWD). The ST-Link's "target voltage" reading of 2.30 V is wrong for this
+  probe.
 
 ### Connectors
 

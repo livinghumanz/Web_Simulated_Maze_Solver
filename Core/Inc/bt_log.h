@@ -42,8 +42,17 @@ void BT_Log_Uart1Only(const char *fmt, ...) __attribute__((format(printf, 1, 2))
  * Returns true if a line was available. */
 bool BT_Log_GetLine(char *out, size_t out_size);
 
+/* ---- USB-C console (CDC, driverless virtual COM port) ----
+ * Output goes to Bluetooth, USART1 (if mirrored) and USB-C at the same time;
+ * commands may arrive on Bluetooth or USB-C. Called from usbd_cdc_if.c. */
+void BT_Log_UsbRx(const uint8_t *data, uint32_t len);
+void BT_Log_UsbPump(void);      /* drain the USB ring; safe to call any time */
+void BT_Log_UsbTxDone(void);    /* from the CDC transmit-complete callback   */
+bool BT_Log_UsbConnected(void);
+
 uint32_t BT_Log_DroppedCount(void);
 uint32_t BT_Log_WiredDroppedCount(void);
+uint32_t BT_Log_UsbDroppedCount(void);
 uint32_t BT_Log_RxByteCount(void);
 
 #define BT_LOG(fmt, ...) BT_Log_Printf(fmt "\r\n", ##__VA_ARGS__)

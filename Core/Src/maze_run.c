@@ -9,6 +9,8 @@
 #include "bt_log.h"
 #include "costAlgorithm.h"
 #include "motion.h"
+#include "motor.h"
+#include "encoder.h"
 #include "ultrasonic.h"
 
 #define MAX_STEPS          100U
@@ -63,7 +65,7 @@ void Maze_DefaultConfig(MazeConfig *c)
     c->sense = true;
     c->wall_update = true;
     c->entry_x = 0;
-    c->pivot_turns = true;
+    c->pivot_turns = false;   /* spins since the left-reverse repair (2026-11-07) */
 }
 
 void Maze_SetAbortCheck(bool (*fn)(void))
@@ -939,4 +941,133 @@ void Maze_PrintMap(void)
     line[k++] = '+';
     line[k] = '\0';
     BT_LOG("%s", line);
+}
+
+/* ---------------- push game: children push the robot by hand ----------------
+ * Motors off. Dead reckoning from the encoders (the wheels must roll on the
+ * floor), snapped to the grid: the heading to the nearest 90 degrees (with
+ * hysteresis), the position to cells along the current heading. Same frame as
+ * the escape run: it starts outside the entry cell (entry_x, 0), facing NORTH
+ * = into the maze, so the website maps it onto the drawing the same way. */
+#define PUSH_PERIOD_MS      20U
+#define PUSH_SNAP_DEG       55.0f   /* re-snap the heading beyond 45 + 10 degrees */
+#define PUSH_SENSE_DELAY_MS 400U    /* in a new cell: sense the walls once after this */
+#define PUSH_SENSE_MAX_DEG  20.0f   /* ...if roughly square to the grid            */
+#define PUSH_SENSE_MAX_MM   45.0f   /* ...and near the cell centre                 */
+#define RAD_TO_DEG          57.29578f
+#define PI_F                3.14159265f
+
+bool Maze_Push(void)
+{
+    if (!sensors_mapped()) {
+        return false;
+    }
+    if (Motion_IsBusy()) {
+        Motion_Stop();
+        osDelay(50);
+    }
+    Motor_Coast();
+    Maze_ResetMap();                       /* map is only for display here */
+    const int n = MAZE_DIM;
+    const int ex = (g_maze_cfg.entry_x < n) ? g_maze_cfg.entry_x : 0;
+    int x = ex, y = -1;                    /* outside, in front of the entry */
+    ABSOLUTE_DIRECTION hd = NORTH;
+
+    /* mm per count; the distance scale multiplies counts per mm */
+    const float scale = Motion_GetDistanceScale();
+    const float mm_l = PI_F * WHEEL_DIAMETER_MM / (ENC_CPR_LEFT * scale);
+    const float mm_r = PI_F * WHEEL_DIAMETER_MM / (ENC_CPR_RIGHT * scale);
+    const float pitch = g_maze_cfg.pitch_mm;
+
+    float theta = 0.0f;                    /* heading, degrees, + = turned right */
+    float theta_q = 0.0f;                  /* heading snapped to the grid        */
+    float s = 0.0f;                        /* mm along hd from the cell centre   */
+    int32_t l0 = Encoder_Left(), r0 = Encoder_Right();
+    uint32_t t_cell = HAL_GetTick();
+    bool sensed = true;                    /* nothing to sense outside the maze */
+    bool was_outside_entry = true;
+
+    BT_LOG("[PUSH] start: outside the entry (cell %d,0) of a %dx%d maze, facing in.", ex, n, n);
+    BT_LOG("[PUSH] Push it slowly with the wheels on the floor. STOP ends.");
+    BT_LOG("[POS] %d -1 N", ex);
+
+    for (;;) {
+        if (aborted()) {
+            BT_LOG("[MAZE] STOPPED");
+            return false;
+        }
+        osDelay(PUSH_PERIOD_MS);
+
+        int32_t l = Encoder_Left(), r = Encoder_Right();
+        float dl = (float)(l - l0) * mm_l, dr = (float)(r - r0) * mm_r;
+        l0 = l;
+        r0 = r;
+        theta += (dl - dr) / Motion_GetTrackWidth() * RAD_TO_DEG;
+        float err = theta - theta_q;
+        s += 0.5f * (dl + dr) * cosf(err / RAD_TO_DEG);
+
+        /* Turned by more than ~half a right angle: snap to the new heading. */
+        if (fabsf(err) > PUSH_SNAP_DEG) {
+            int quarters = (int)lroundf(err / 90.0f);
+            RelDir rel;
+            switch (((quarters % 4) + 4) % 4) {
+            case 1:  rel = REL_RIGHT; break;
+            case 3:  rel = REL_LEFT;  break;
+            default: rel = REL_BACK;  break;
+            }
+            if (quarters != 0) {
+                BT_LOG("[CELL] (%d,%d) %c push -> %s", x, y, DIR_CHAR[hd], Maze_RelName(rel));
+                theta_q += 90.0f * (float)quarters;
+                hd = apply_rel(hd, rel);
+                s = 0.0f;                  /* turned on the spot: back to the centre */
+                BT_LOG("[POS] %d %d %c", x, y, DIR_CHAR[hd]);
+            }
+        }
+
+        /* Crossed into the next (or previous) cell along the heading. */
+        int moved = 0;
+        if (s > 0.5f * pitch) {
+            BT_LOG("[CELL] (%d,%d) %c push -> FORWARD", x, y, DIR_CHAR[hd]);
+            s -= pitch;
+            step_pos(&x, &y, hd);
+            moved = 1;
+        } else if (s < -0.5f * pitch) {
+            s += pitch;
+            step_pos(&x, &y, BACK_OF[hd]);
+            moved = -1;
+        }
+        if (moved != 0) {
+            BT_LOG("[POS] %d %d %c", x, y, DIR_CHAR[hd]);
+            t_cell = HAL_GetTick();
+            bool inside = x >= 0 && y >= 0 && x < n && y < n;
+            sensed = !inside;
+            if (!inside) {
+                if (x == ex && y == -1) {
+                    if (!was_outside_entry) {
+                        BT_LOG("[PUSH] back outside the entry - push it in again");
+                    }
+                    was_outside_entry = true;
+                } else {
+                    BT_LOG("[ESCAPE] out of the maze at %d,%d", x, y);
+                    BT_LOG("[MAZE] ESCAPED");
+                    return true;
+                }
+            } else {
+                was_outside_entry = false;
+            }
+        }
+
+        /* Settled in a cell, square to the grid, near the centre: look at the walls once. */
+        if (!sensed && HAL_GetTick() - t_cell > PUSH_SENSE_DELAY_MS
+                && fabsf(theta - theta_q) < PUSH_SENSE_MAX_DEG && fabsf(s) < PUSH_SENSE_MAX_MM) {
+            MazeWalls w;
+            Maze_Sense(&w);
+            CURRENT_CELL = (CELL){(uint8_t)x, (uint8_t)y};
+            CURRENT_ABSOLUTE_DIRECTION = hd;
+            apply_walls(&w);
+            Maze_ReportWalls();
+            BT_LOG("[PUSH] (%d,%d) %c walls f=%u l=%u r=%u", x, y, DIR_CHAR[hd], w.df, w.dl, w.dr);
+            sensed = true;                 /* wheel counts during sensing are kept */
+        }
+    }
 }

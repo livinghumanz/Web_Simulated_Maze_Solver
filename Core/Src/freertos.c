@@ -160,6 +160,9 @@ void StartDefaultTask(void *argument)
   /* Mode is chosen once at boot from the DIP switches. */
   uint8_t dip = DIP_Read();
   BT_LOG("Boot: DIP=0x%X mode=%s", dip, DIP_ModeName(dip));
+#if !MOTOR_OUTPUTS_ENABLED
+  BT_LOG("[MOTOR] driver outputs OFF (pins analog, see motor.h) - push the robot by hand");
+#endif
 
   switch (dip) {
     case APP_MODE_BT_TEST:

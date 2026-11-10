@@ -32,7 +32,7 @@
 /* USER CODE BEGIN Includes */
 #include "comm_uart.h"
 #include "bt_log.h"
-#include "dfu.h"
+#include "motor.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -76,7 +76,7 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-  Dfu_CheckAtStartup();   /* "DFU" command: jump to the USB bootloader from a clean reset */
+
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -117,6 +117,9 @@ int main(void)
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_4);
 
   TIM3->ARR = 1010; //Timer Clock 40Mhz, PSC 3 , Approx 10Khz(9990)
+#if !MOTOR_OUTPUTS_ENABLED
+  Motor_PinsHighZ();   /* driver short (2026-11-07): keep the MCU off the driver inputs */
+#endif
 
   // Start Encoder Once 
   HAL_TIM_Encoder_Start(&htim2, TIM_CHANNEL_ALL); // for Right Encoder

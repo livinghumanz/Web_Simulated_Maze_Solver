@@ -50,6 +50,7 @@ static void print_help(void)
     BT_LOG("  STAT        link + RTOS stats");
     BT_LOG("  BTNAME <n>  rename the HC-05 (hold its button when told)");
     BT_LOG("  BTINFO      result of the last rename");
+    BT_LOG("  UPDATE      USB firmware update (RATROCKET drive)");
 }
 
 /* ---------- HC-05 rename via AT commands ----------
@@ -152,7 +153,7 @@ static void handle_command(char *line)
         }
         return;
     }
-    if (strcmp(upper, "DFU") == 0) {
+    if (strcmp(upper, "UPDATE") == 0 || strcmp(upper, "DFU") == 0) {
         Dfu_Enter();
     }
     if (strcmp(upper, "BTINFO") == 0) {

@@ -88,3 +88,25 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
 
     # Add user defined libraries
 )
+
+# Firmware update file for the tinyuf2 USB bootloader (docs/firmware.md):
+# after every link, turn the elf into ratrocket.uf2 next to it. Copy that file
+# onto the RATROCKET drive to flash the robot over USB-C. The objcopy next to
+# the compiler is used, so the toolchain does not have to be on PATH.
+get_filename_component(RATROCKET_TOOLCHAIN_DIR "${CMAKE_C_COMPILER}" DIRECTORY)
+find_program(RATROCKET_OBJCOPY arm-none-eabi-objcopy HINTS "${RATROCKET_TOOLCHAIN_DIR}" REQUIRED)
+find_package(Python3 COMPONENTS Interpreter)
+if(Python3_Interpreter_FOUND)
+    add_custom_command(TARGET ${CMAKE_PROJECT_NAME} POST_BUILD
+        COMMAND "${RATROCKET_OBJCOPY}" -O binary
+                "$<TARGET_FILE:${CMAKE_PROJECT_NAME}>" "${CMAKE_BINARY_DIR}/ratrocket.bin"
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/make_uf2.py"
+                "${CMAKE_BINARY_DIR}/ratrocket.bin" "${CMAKE_BINARY_DIR}/ratrocket.uf2"
+                --base 0x08010000 --limit 0x08060000 --family 0x57755A57
+        BYPRODUCTS "${CMAKE_BINARY_DIR}/ratrocket.bin" "${CMAKE_BINARY_DIR}/ratrocket.uf2"
+        COMMENT "Creating ratrocket.uf2"
+        VERBATIM
+    )
+else()
+    message(WARNING "Python 3 not found: ratrocket.uf2 (USB update file) will not be created")
+endif()

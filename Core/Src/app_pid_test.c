@@ -109,7 +109,7 @@ static void print_help(void)
     BT_LOG("  STOP                 abort the move, motors coast");
     BT_LOG("  KP|KI|KD|KFF|KS <x>  set a gain   GAINS  show gains");
     BT_LOG("  TEL <ms>             telemetry period (0 = events only)");
-    BT_LOG("  ENC  BAT  STAT  PING");
+    BT_LOG("  ENC  BAT  STAT  PING  UPDATE (USB firmware update)");
     BT_LOG("Telemetry: [P] t vt=target mm/s v=measured mm/s e=error counts d=duty (L,R)");
 }
 
@@ -150,7 +150,7 @@ static void handle_command(char *line)
         Motion_Stop();
     } else if (strcmp(cmd, "HELP") == 0 || strcmp(cmd, "?") == 0) {
         print_help();
-    } else if (strcmp(cmd, "DFU") == 0) {
+    } else if (strcmp(cmd, "UPDATE") == 0 || strcmp(cmd, "DFU") == 0) {
         Dfu_Enter();
     } else if (strcmp(cmd, "PING") == 0) {
         BT_LOG("PONG");

@@ -39,6 +39,7 @@ typedef enum { ST_IDLE, ST_FWD, ST_TURN, ST_SPEED, ST_SETTLE } State;
 typedef struct {
     float cpm;          /* counts per mm                          */
     bool can_reverse;
+    float ks_extra;     /* duty added to kstatic for this wheel   */
     float sgn;          /* direction of this wheel in FWD/TURN    */
     float start;        /* position at move start, counts         */
     float tgt;          /* target position, counts                */
@@ -118,9 +119,9 @@ static int16_t wheel_pid(Wheel *w, int32_t pos)
     float v_cps = w->v * w->cpm;
     float u = s_gains.kff * v_cps + s_gains.kp * e + s_gains.kd * w->d_f + s_gains.ki * w->i;
     if (v_cps > 1.0f) {
-        u += s_gains.kstatic;
+        u += s_gains.kstatic + w->ks_extra;
     } else if (v_cps < -1.0f) {
-        u -= s_gains.kstatic;
+        u -= s_gains.kstatic + w->ks_extra;
     }
     u *= s_comp;                   /* supply-voltage compensation */
 
@@ -414,6 +415,8 @@ void Motion_Start(void)
     update_cpm();
     s_l.can_reverse = (MOTION_LEFT_CAN_REVERSE != 0);
     s_r.can_reverse = (MOTION_RIGHT_CAN_REVERSE != 0);
+    s_l.ks_extra = MOTION_KSTATIC_LEFT_EXTRA;
+    s_r.ks_extra = 0.0f;
 
     s_cmd_q = osMessageQueueNew(4, sizeof(MotionCmd), NULL);
     s_tel_q = osMessageQueueNew(16, sizeof(MotionSample), NULL);

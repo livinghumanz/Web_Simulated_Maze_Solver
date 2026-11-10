@@ -194,7 +194,7 @@ static void print_help(void)
     BT_LOG("  DECEL <L|R>      compare coast / brake / reverse stopping");
     BT_LOG("  STOP             brake + coast (works while running)");
     BT_LOG("  ENC / ENC0       encoder positions / reset them");
-    BT_LOG("  BAT  FAULT  STAT PING");
+    BT_LOG("  BAT  FAULT  STAT PING  UPDATE (USB firmware update)");
 }
 
 static void cmd_sweep(void)
@@ -410,7 +410,7 @@ static void handle_command(char *line)
     }
     if (strcmp(cmd, "HELP") == 0 || strcmp(cmd, "?") == 0) {
         print_help();
-    } else if (strcmp(cmd, "DFU") == 0) {
+    } else if (strcmp(cmd, "UPDATE") == 0 || strcmp(cmd, "DFU") == 0) {
         Dfu_Enter();
     } else if (strcmp(cmd, "PING") == 0) {
         BT_LOG("PONG");

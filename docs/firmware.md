@@ -21,11 +21,118 @@ Every mode prints a banner and answers `HELP`.
 
 ## Talking to the robot
 
+### USB-C console (2026-11-10)
+
+The robot is a **driverless USB serial device** (CDC, VID 0483 / PID 5740).
+Plug a USB-C cable into any PC or Chromebook and it appears as a COM port
+(COM9 on this PC) with no driver and no ST tools. Output goes to Bluetooth,
+USART1 (if mirrored) **and** USB-C at once, and commands may arrive on
+Bluetooth or USB-C - both feed the same line buffer (`feed_rx_char` in
+`bt_log.c`). The baud rate is ignored by CDC, so 9600 works for both links.
+
+- `usbd_cdc_if.c`: `CDC_Receive_FS` hands bytes to `BT_Log_UsbRx`;
+  `CDC_TransmitCplt_FS` calls `BT_Log_UsbTxDone`; `CDC_Transmit_FS` now
+  refuses before enumeration (CubeMX dereferenced a NULL class handle there).
+- `bt_log.c`: a 2 KB ring, drained in 64-byte packets. It is guarded with
+  PRIMASK rather than a FreeRTOS critical section, because the pump also runs
+  in the USB interrupt. Bytes are consumed and claimed in one step - advancing
+  afterwards races with the completion interrupt and sends every line twice.
+- Nothing is buffered while no host is connected, so a robot on a powerbank
+  does not fill the ring.
+- **Flashing** over USB-C works through the tinyuf2 bootloader (a USB drive
+  named RATROCKET), see [Flashing](#flashing). ST's ROM bootloader stays
+  unusable on this board; see `hardware.md`.
+
+
 - **Bluetooth:** HC-05 named `RatRocket` (PIN 1234), 9600 baud. On this PC it is
   COM12. Any serial terminal works; send one command per line.
 - **Wired mirror:** in the test and maze modes the same text also goes out on
   USART1 (115200, FTDI on COM7). Not in web-sim mode, where USART1 carries the
   simulator protocol.
+
+## Flashing
+
+### Over USB-C: drag and drop (normal way)
+
+The first 64 KB of flash hold the [tinyuf2](https://github.com/adafruit/tinyuf2)
+USB bootloader (since 2026-11-10). In update mode the robot is a USB drive
+named **RATROCKET**; copying a `.uf2` file onto it flashes the program. No
+driver and no ST tools are needed.
+
+1. Build: `cmake --build build/Debug`. Every build also writes
+   `build/Debug/ratrocket.uf2` (objcopy + `tools/make_uf2.py`; needs Python 3,
+   otherwise CMake prints a warning and skips the file).
+2. Connect USB-C and enter update mode, either way:
+   - send `UPDATE` (or `DFU`) over Bluetooth or the USB serial port (works in
+     every mode except web-sim, which has no console), or
+   - **double-press the reset button** (second press within 0.5 s).
+3. Copy `ratrocket.uf2` onto the RATROCKET drive (Explorer, or
+   `Copy-Item build\Debug\ratrocket.uf2 D:\`). About 2 s later the drive
+   disappears and the robot starts the new program (COM9 is back).
+
+- Pressing reset once leaves update mode without flashing.
+- The saved settings survive: the bootloader only erases the sectors the file
+  writes to, and `make_uf2.py` refuses an image that would reach the settings
+  sector (it also refuses a program not linked for 0x08010000).
+- Every start spends 0.5 s in the bootloader (the double-press window).
+- Blue LED (PB5): on for that 0.5 s, on in update mode, flickering while a file
+  is written. (The pin level is verified; the LED itself not yet by eye.)
+- The drive also shows `INFO_UF2.TXT` (bootloader version, board ID
+  `KAVWV-RatRocket-F411RE-v1`) and `CURRENT.UF2` (a copy of the flash).
+- USB IDs in update mode: VID 1209 / PID 0010 (pid.codes test ID, to be
+  replaced by a permanent pid.codes allocation), "KAVWV RatRocket". The
+  program itself keeps ST's CDC IDs (0483 / 5740).
+
+### Flash map
+
+| Address | Size | Sectors | Contents |
+|---|---|---|---|
+| 0x08000000 | 64 KB | 0-3 | tinyuf2 bootloader (16 KB used). It write-protects sectors 0-1 at every start. |
+| 0x08010000 | 320 KB | 4-6 | the program (`STM32F411XX_FLASH.ld`; vector table offset in `system_stm32f4xx.c`) |
+| 0x08060000 | 128 KB | 7 | saved settings (`settings.c`) |
+
+`UPDATE` (`dfu.c`) writes the bootloader's "stay in update mode" value
+0xF01669EF to the RAM word 0x2000FFFC and resets; RAM survives a reset. That
+word lies in RAM the program leaves unused (between its heap and the main
+stack at the top of RAM).
+
+### With the ST-Link (development and recovery)
+
+- The program, as before (erases sectors 4-6 only, fine with the protection):
+  `STM32_Programmer_CLI -c port=SWD -w build/Debug/Rat_Rocket_F411RET6_PinConfigs.elf -v -rst`
+- The bootloader (install, update or recovery). Its sectors are
+  write-protected, so clear WRP0/WRP1 in the same command; the bootloader sets
+  them again at its next start:
+  `STM32_Programmer_CLI -c port=SWD -ob WRP0=1 WRP1=1 -w tinyuf2.bin 0x08000000 -v -rst`
+- Erasing with `-e` skips the write-protected sectors 0-1 ("Protected sectors
+  are not erased"); clear WRP0/WRP1 first to remove the bootloader, and the
+  program does not start without it. A full erase also wipes the saved
+  settings (sector 7).
+
+### Building the bootloader
+
+Source: the tinyuf2 checkout at `W:/FreelanceProjects/tinyuf2`, board
+`ports/stm32f4/boards/kavwv_ratrocket` (`board.h`: LED, USB IDs, clock;
+`board.cmake`). Besides the `lib/tinyusb` and `lib/uf2` submodules it needs
+`lib/mcu/st/cmsis_device_f4` @ 2615e866 and `lib/mcu/st/stm32f4xx_hal_driver`
+@ 04e99fbd (the pins in `tools/get_deps.py`). Build with ST's bundled tools in
+a PowerShell **without w64devkit on PATH** (GCC's parallel LTO link would run
+its `make`/`sh`, which cannot handle Windows paths), and only the `tinyuf2`
+target (the other targets need tinyuf2's own Python scripts):
+
+```powershell
+$b = "$env:LOCALAPPDATA\stm32cube\bundles"
+$env:PATH = "$b\gnu-tools-for-stm32\14.3.1+st.2\bin;$b\ninja\1.13.2+st.1\bin;$b\cmake\4.3.1+st.1\bin;C:\Program Files\Git\cmd;C:\Windows\System32;C:\Windows"
+$bd = "W:/FreelanceProjects/tinyuf2/cmake-build/cmake-build-kavwv_ratrocket"
+New-Item -ItemType Directory -Force "$bd/_bin/apps" | Out-Null
+cd W:\FreelanceProjects\tinyuf2
+cmake -B $bd -G Ninja -DCMAKE_BUILD_TYPE=MinSizeRel -DBOARD=kavwv_ratrocket "-DARTIFACT_PATH=$bd/_bin" ports/stm32f4
+cmake --build $bd --target tinyuf2
+```
+
+The result is `$bd/tinyuf2.bin` (15.8 KB). The bootloader uses the program's
+clock tree (25 MHz crystal, 40 MHz core, 48 MHz USB): tinyuf2's usual F411
+setting (84 MHz) crashed at random on this board.
 
 ## Architecture
 
@@ -60,7 +167,7 @@ Rules that keep timing clean:
 | `ultrasonic.c/.h` | HC-SR04 driver, median reads |
 | `maze_run.c/.h` | Flood-fill run with real sensors: sense → plan → turn → drive one cell |
 | `settings.c/.h` | Save/load maze-mode settings in MCU flash sector 7 |
-| `dfu.c/.h` | `DFU` command: reset into the ROM USB bootloader (`.noinit` request flag) |
+| `dfu.c/.h` | `UPDATE` / `DFU` command: restart into the tinyuf2 USB bootloader (RATROCKET drive) |
 | `app_*.c/.h` | One file per DIP mode (console + mode logic) |
 
 ### Changes to the original files
@@ -74,10 +181,13 @@ Kept small on purpose:
   (`MAZE_DIM`, default 5 for the web simulator); arrays are sized by
   `MAZE_DIMENSIONS_MAX` (5).
 - `motor.c/.h` — new functions added; existing ones unchanged.
-- `CMakeLists.txt` — new source files.
-- `STM32F411XX_FLASH.ld` — program flash limited to 384 KB (the last 128 KB
-  sector holds saved settings); new `.noinit` RAM section.
-- `main.c` — `Dfu_CheckAtStartup()` first thing in `main()`.
+- `CMakeLists.txt` — new source files; post-build step that writes
+  `ratrocket.uf2` (`tools/make_uf2.py`).
+- `STM32F411XX_FLASH.ld` — program flash 0x08010000-0x0805FFFF (320 KB): the
+  first 64 KB hold the USB bootloader, the last 128 KB sector the saved
+  settings.
+- `system_stm32f4xx.c` — `USER_VECT_TAB_ADDRESS` with `VECT_TAB_OFFSET`
+  0x10000, so the vector table is at 0x08010000.
 
 ## Motion control (`motion.c`)
 
@@ -126,7 +236,7 @@ nominal pitch; the next wall it sees corrects the error.
 | Maze | `GO`, `GOTO <x> <y>`, `POSE <x> <y> <N\|E\|S\|W>`, `RESETMAP`, `MAP`, `WHERE`, `MAZEDEF <n> <hex>`, `WALLSREP` |
 | Settings | `SIZE`, `GOAL`, `PITCH`, `TRACK`, `VRUN`, `VTURN`, `KC <p> <d>`, `HOME 0\|1`, `ALIGN 0\|1`, `SENSE 0\|1`, `WALLUPD 0\|1`, `PIVOTS 0\|1`, `CFG` |
 | Keep settings | `SAVE` (to MCU flash, survives power-off; robot freezes ~2 s), `LOAD`, `DEFAULTS` (also erases the saved copy) |
-| Misc | `BAT`, `ENC`, `STAT`, `PING`, `DFU` (USB bootloader; hold BOOT0 — see hardware.md, USB enumeration currently fails) |
+| Misc | `BAT`, `ENC`, `STAT`, `PING`, `UPDATE` or `DFU` (USB update mode: RATROCKET drive, see [Flashing](#flashing)) |
 
 The PB2 push-button starts `ESCAPE` (or `GO` after `BTN GO`), 1 s after
 release. During a run, `STOP` or the button aborts.
@@ -190,7 +300,13 @@ Fit and safety rules used here:
   side wall it steers away at full strength.
 - **Front**: stops before a wall (under 18 mm) and on a blocked wheel.
 
-## Turning: pivots (default) and spins
+## Turning: spins (default) and pivots
+
+**Since 2026-11-07 (left reverse repaired) the default is spins (`PIVOTS 0`,
+saved in flash).** TURN 360 on the floor with the powerbank: right exact,
+left 1-2° over. Escape run with spins: ESCAPED, front stops at 32-37 mm
+(target 33), side readings 45-54 mm (target 48). The pivot notes below
+are kept for reference.
 
 - **Pivot turn** (`PIVOTS 1`, default for left and right turns): the inner
   wheel stays still and only the outer wheel drives forward, along an arc as
@@ -233,6 +349,58 @@ Flow at the booth:
 
 The page uses the robot's coordinates directly: (0,0) bottom-left, North up.
 (The older RaspRover hackathon page used a rotated layout; this one does not.)
+
+Escape game on the page:
+
+- The **entry is fixed on the left of 0,0** (green dashes). The robot icon waits
+  outside it, facing in. **Clear walls** keeps the entry open and puts the robot
+  icon back there. To change it, edit `entry` near the top of the page script.
+- Click the **outer wall** (Walls tool) to open the **exit** (green dashes).
+  Openings are for the screen only: the robot always gets a closed border in
+  `MAZEDEF`.
+- **Escape!** sends `ENTRY <n>` for that entry (left of 0,0 = `ENTRY 2`: the
+  robot drives in heading east, the cell is the third from its left), then
+  `ESCAPE`.
+- During an escape the robot reports `[POS]`/`[WALLS]` in its own frame
+  (it "drives north into cell ENTRY,0"); the page rotates them onto the drawing.
+- The drawing is kept in the browser (`localStorage`), so a page reload keeps it.
+- The page no longer sends `WHERE` on connect (the robot's idle position would
+  pull the icon off the entry); use **Where are you?** if needed.
+
+First full run, 2026-11-07, maze: walls (0,2)|(1,2), (0,2)/(0,1), (0,1)/(0,0),
+(1,1)|(2,1), (2,2)/(2,1), (2,1)/(2,0), (1,0)|(2,0); exit right of (2,2).
+Right-hand path (0,0) → (1,0) → left → (1,1) → (1,2) → right → (2,2) → out:
+ESCAPED, every sensor reading matched the drawing.
+
+### Round display (optional)
+
+The page can mirror the robot's moves on the KAVWV round display (ESP32 +
+GC9A01, firmware in `W:/FreelanceProjects/GC9A01-Display-turnByTurn`) over
+BLE, exactly like the phone app does. Click **Connect display** and pick
+`KAVWV-xxxx` (the phone app must not be connected to it at the same time).
+`web/kavwv_display.js` speaks the display protocol and is checked byte for
+byte against all 7 NavCore/Heartbeat/Session golden vectors in the display
+repo (`vendor/vectors.json`).
+
+| Robot | Display |
+|---|---|
+| waiting / run started | "depart" arrow, `--` |
+| decides FORWARD / LEFT / RIGHT / UTURN | big arrow; 100 m (straight) or 0 m (turn now) |
+| top number | escape: distance driven; GOTO: distance to go (1 cell = 100 m, "mini city") |
+| progress arc | escape: share of the maze visited; GOTO: share of the way done |
+| `ESCAPED` / `ARRIVED` | finish flag, full arc |
+| `STOPPED` | arrow cleared |
+| route line | cells driven (grey trail) -> robot -> next cell / GOTO route on the drawn maze (dark), heading-up, 3 m per pixel (a cell ~33 px) |
+| turns | the heading is stepped every 66 ms (1.5 s per 90°, 2.5 s per U-turn) so the display swings the route round smoothly; it snaps to the robot's reported direction when the turn ends |
+
+- Always **dark** theme: the page sends SetConfig theme = night on every
+  connect (the display resets to "auto" - night only 20:00-06:00 - at each
+  power cycle).
+- The display cannot draw maze walls (it ignores the map-underlay message and
+  the route is one continuous line), so walls stay on the website.
+- **Test display (arrows demo)** cycles the arrows without the robot.
+- `web/kavwv_display.js` encoders (NavCore, RouteSnippet, Heartbeat, Session)
+  are checked against the display repo's golden vectors (8/8 pass).
 
 ### Protocol (text lines, 9600 baud)
 

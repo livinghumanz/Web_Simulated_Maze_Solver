@@ -98,6 +98,14 @@ bool Maze_Run(void);
  * No map needed, so uneven cells are fine. Logs [MAZE] ESCAPED on success. */
 bool Maze_Escape(void);
 
+/* Push game: motors off, children push the robot through the maze by hand.
+ * Same frame and start as Maze_Escape (outside the entry, facing in). The
+ * encoders (wheels rolling on the floor) give distance and turns, snapped to
+ * cells and 90-degree headings; walls are sensed once in every cell. Logs
+ * [POS], [CELL] ... -> FORWARD|LEFT|RIGHT|UTURN, [WALLS], and [MAZE] ESCAPED
+ * when it leaves the maze through another opening. Runs until STOP. */
+bool Maze_Push(void);
+
 void Maze_PrintMap(void);
 const char *Maze_RelName(RelDir r);
 

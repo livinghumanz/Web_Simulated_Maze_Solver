@@ -36,6 +36,17 @@ void Motor_BrakeRight(void);
 void Motor_Brake(void);
 void Motor_Coast(void);        /* both inputs low: motor free-wheels */
 
+/* Motor driver outputs on/off at build time.
+ * 0 (2026-11-07): after the PB1 -> IN3 repair the board heats on USB-C power,
+ * i.e. something at the driver is shorted. PA6/PA7/PB0/PB1 are put in analog
+ * mode (high impedance) at boot, so the MCU cannot drive or sink current into
+ * the driver inputs. The robot is pushed by hand (push game); encoders,
+ * ultrasonics and Bluetooth still work. Set back to 1 once the driver is fixed. */
+#define MOTOR_OUTPUTS_ENABLED 1
+
+/* Put the four driver input pins in analog mode (high impedance). */
+void Motor_PinsHighZ(void);
+
 /* Change the PWM frequency (keeps the 0..MOTOR_PWM_MAX duty range).
  * Returns the frequency actually set, in Hz. Default after boot: ~9.9 kHz. */
 uint32_t Motor_SetPwmFrequency(uint32_t hz);

@@ -37,10 +37,14 @@
 #define MOTION_TRACK_MM_DEFAULT  96.0f
 #define MOTION_PWM_HZ            1000U     /* low PWM freq = small dead-band */
 #define MOTION_SUPPLY_REF_MV     4200.0f   /* Battery_ReadMv() value when the gains were tuned (USB) */
-/* Left motor reverse input (PB1) does not reach the driver: the left wheel can
- * only drive forward or coast. Set to 1 once the board is repaired. */
-#define MOTION_LEFT_CAN_REVERSE  0
+/* Left motor reverse input (PB1 -> IN3) repaired 2026-11-07 (DECEL L: reverse
+ * stops the wheel in 24 counts / 17 ms). */
+#define MOTION_LEFT_CAN_REVERSE  1
 #define MOTION_RIGHT_CAN_REVERSE 1
+/* Extra static-friction duty for the left wheel on top of kstatic. SWEEP
+ * 2026-11-07 @1 kHz, lifted: the left needs ~110 more duty than the right at
+ * 1300-2200 counts/s (duty 400: L 820 / R 1674 cps; equal near full duty). */
+#define MOTION_KSTATIC_LEFT_EXTRA 110.0f
 
 typedef struct {
     float kp;       /* duty per count of position error             */

@@ -43,6 +43,18 @@ void stop_Fast() {
 	TIM3->CCR4 = 800;
 }
 
+void Motor_PinsHighZ(void)
+{
+	GPIO_InitTypeDef g = {0};
+	TIM3->CCR1 = TIM3->CCR2 = TIM3->CCR3 = TIM3->CCR4 = 0;
+	g.Mode = GPIO_MODE_ANALOG;
+	g.Pull = GPIO_NOPULL;
+	g.Pin = GPIO_PIN_6 | GPIO_PIN_7;      /* PA6 = IN1, PA7 = IN2 (right) */
+	HAL_GPIO_Init(GPIOA, &g);
+	g.Pin = GPIO_PIN_0 | GPIO_PIN_1;      /* PB0 = IN4, PB1 = IN3 (left)  */
+	HAL_GPIO_Init(GPIOB, &g);
+}
+
 /* Set to -1 if a wheel spins backwards on a positive duty (see SWEEP). */
 #define MOTOR_LEFT_DIR   (+1)
 #define MOTOR_RIGHT_DIR  (+1)

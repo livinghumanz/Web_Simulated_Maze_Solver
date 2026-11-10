@@ -163,13 +163,14 @@ static void print_help(void)
     BT_LOG("           CALDIST <commanded mm> <actual mm> | TRIM <pct> (+ if it curves left)");
     BT_LOG(" Moves   : FWD <mm> [v] | TURN <deg> [v] (spin, + = right) | PIVOT <deg> [v] | CELL | STOP");
     BT_LOG(" Escape  : ESCAPE (start outside the entry, right-hand wall following) | BTN ESCAPE|GO");
+    BT_LOG(" Push    : PUSH (motors off, push the robot by hand; tracked by the encoders) | STOP");
     BT_LOG("           ENTRY n (entry cell along its side, from the robot's left: 0 = corner)");
     BT_LOG(" Maze    : GO | GOTO <x> <y> | POSE <x> <y> <N|E|S|W> | RESETMAP | MAP | WHERE");
     BT_LOG("           MAZEDEF <n> <hex> (load drawn maze) | WALLSREP");
     BT_LOG(" Config  : SIZE n | GOAL x y | PITCH mm | TRACK mm | VRUN v | VTURN v");
     BT_LOG("           KC <p> <d> | HOME 0|1 | ALIGN 0|1 | SENSE 0|1 | WALLUPD 0|1 | PIVOTS 0|1 | CFG");
     BT_LOG(" Settings: SAVE (keep across power-off) | LOAD | DEFAULTS");
-    BT_LOG(" Misc    : BAT ENC STAT PING | DFU (USB bootloader for flashing over USB-C)");
+    BT_LOG(" Misc    : BAT ENC STAT PING | UPDATE or DFU (RATROCKET USB drive: copy a .uf2 to flash)");
     BT_LOG("           Button PB2 = %s.", s_button_escape ? "ESCAPE" : "GO");
 }
 
@@ -323,7 +324,7 @@ static void handle_command(char *line)
     }
     if (strcmp(cmd, "HELP") == 0 || strcmp(cmd, "?") == 0) {
         print_help();
-    } else if (strcmp(cmd, "DFU") == 0) {
+    } else if (strcmp(cmd, "UPDATE") == 0 || strcmp(cmd, "DFU") == 0) {
         Dfu_Enter();
     } else if (strcmp(cmd, "PING") == 0) {
         BT_LOG("PONG");
@@ -424,6 +425,9 @@ static void handle_command(char *line)
     } else if (strcmp(cmd, "ESCAPE") == 0) {
         Maze_SetAbortCheck(abort_check);
         (void)Maze_Escape();
+    } else if (strcmp(cmd, "PUSH") == 0) {
+        Maze_SetAbortCheck(abort_check);
+        (void)Maze_Push();
     } else if (strcmp(cmd, "ENTRY") == 0) {
         if (parse_f(a1, &v1) && v1 >= 0 && v1 < c->size) {
             c->entry_x = (uint8_t)v1;
