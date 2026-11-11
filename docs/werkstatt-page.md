@@ -336,3 +336,18 @@ Not implemented; ideas from building the page.
    PID test like the other modes.
 9. **A PID run summary** in `[EV] DONE` (overshoot, settle time, largest
    error), which the page now computes from the samples.
+
+### Console replay on the robot (2026-11-11)
+
+Before the first browser session, the motor-tab command sequence was replayed
+over the USB console with the robot elevated in motor-test mode. Every reply
+matched the mapping table: `ENC: reset`, `ENC: L=0 R=0`, `[T]` lines five
+times a second during `PWM 450 0 2000` then `PWM done: moved L=3807 R=0
+counts`, `PWM aborted: moved ...` after `STOP` during a held run,
+`JOG result: L moved 3085, R moved 0 counts (target 3000, incl. overshoot)`,
+and the SWEEP table (200 -> 0, 300 -> 930/930, ... 1010 -> 4134/3874 cps)
+ending in `SWEEP done`. Observation worth teaching: `PWM 0 -300` did not
+start the right wheel backwards (0 pulses) while +300 forward runs - the
+start threshold differs by direction. Still to confirm by eye in the
+browser: DIP drawing ON direction, wheel arrow directions; PID and
+Kalibrieren tabs not yet replayed (need SW1+SW2 and SW3).
