@@ -14,15 +14,23 @@
  *
  * Level 7 is a sandbox: the pupil draws the maze. Programs can be saved to
  * and opened from a JSON file, for handing in.
+ *
+ * Variables belong to one program (one scope per task): a list of names,
+ * kept with the program. Their values live only here in the browser and
+ * start at 0 on every run; the robot never hears about them. A condition is
+ * either a sensor condition ('frontFree' ...) or a comparison {v, op, n}.
  */
 (function () {
   'use strict';
 
-  const { BLOCKS, CONDITIONS, TEXT, LEVELS } = window.RRData;
+  const { BLOCKS, CONDITIONS, OPS, NUM_MIN, NUM_MAX, TEXT, LEVELS } = window.RRData;
   const $ = (id) => document.getElementById(id);
   const STORE = 'ratrocket.code';
   const MAX_ACTIONS = 400;
   const SELFTEST = /[?&]selftest/.test(location.search);
+  const VAR_MAX = 12;                   /* variables per program */
+  /* letters (with umlauts and sharp s) and digits, a letter first, 1..12 */
+  const VAR_NAME = /^[A-Za-z\u00c4\u00d6\u00dc\u00e4\u00f6\u00fc\u00df][A-Za-z0-9\u00c4\u00d6\u00dc\u00e4\u00f6\u00fc\u00df]{0,11}$/;
 
   /* ---------------- state ---------------- */
   let lang = 'de';
@@ -38,6 +46,11 @@
   let rxWaiters = [];
   let sandbox = null;             /* level 7: {n, mazes: {3: maze, 4: maze, 5: maze}} */
   let editTool = 'walls';         /* level 7: 'walls' or 'goal' - what a click changes */
+  let vars = [];                  /* the open program's variable names */
+  let varsBy = {};                /* per level id, saved like progs */
+  let varVals = new Map();        /* name -> value during and after a run */
+  let lastChanged = null;         /* the variable that changed last (watch panel) */
+  let shownLog = [];              /* what "zeige" showed in this run: [name, value] */
 
   const t = (key, vars) => {
     let s = (TEXT[lang] && TEXT[lang][key]) || TEXT.de[key] || key;
@@ -82,7 +95,7 @@
 
     return {
       n, walls, exit, inside,
-      goal: lv.goal,
+      goal: (v && v.goal) || lv.goal,              /* a variant may move the star */
       bot: { x: lv.start.x, y: lv.start.y, d: lv.start.d },
       angle: ANGLE[lv.start.d],      /* keeps turning, so 270->360 spins the short way */
       room: lv.goal === 'out' || !!lv.sandbox,     /* space round the maze to drive out */
@@ -220,13 +233,36 @@
           yield* runList(b.body, ctx);
         }
         break;
+      case 'repeatUntil':
+        /* checks before every round; each check is one action, so a
+           condition that never comes true still ends at the action budget */
+        for (;;) {
+          yield askFor(b);
+          if (ctx.test(b.cond)) break;
+          yield* runList(b.body, ctx);
+        }
+        break;
       case 'ifElse':
-        yield { act: 'sense', b };           /* read the sensors first */
+        yield askFor(b);                     /* read the sensors first */
         if (ctx.test(b.cond)) yield* runList(b.body, ctx);
         else yield* runList(b.alt, ctx);
         break;
+      case 'setVar':    yield { act: 'var', op: 'set', b }; break;
+      case 'changeVar': yield { act: 'var', op: 'change', b }; break;
+      case 'showVar':   yield { act: 'show', b }; break;
       default: break;
     }
+  }
+
+  const isCompare = (c) => !!c && typeof c === 'object';
+  /* A sensor condition asks the robot (WALLS); a comparison only looks at a
+     variable here in the browser - nothing is sent. */
+  const askFor = (b) => (isCompare(b.cond) ? { act: 'tick', b } : { act: 'sense', b });
+  const varVal = (name) => varVals.get(name) || 0;
+
+  function compare(c) {
+    const a = varVal(c.v);
+    return c.op === '>' ? a > c.n : c.op === '<' ? a < c.n : a === c.n;
   }
 
   function makeCtx() {
@@ -236,6 +272,7 @@
         return world.entered && !world.inside(world.bot.x, world.bot.y);
       },
       test(cond) {
+        if (isCompare(cond)) return compare(cond);
         const side = cond.startsWith('front') ? world.bot.d
                    : cond.startsWith('right') ? RIGHT_OF[world.bot.d]
                    : LEFT_OF[world.bot.d];
@@ -335,6 +372,22 @@
 
     if (a.act === 'tick') { return true; }
 
+    /* variables live here in the browser: nothing goes to the robot */
+    if (a.act === 'var') {
+      const b = a.b;
+      setVarValue(b.v, a.op === 'set' ? b.n : varVal(b.v) + b.n);
+      if (!real) await sleep(stepMs() * 0.45);
+      return true;
+    }
+    if (a.act === 'show') {
+      const v = varVal(a.b.v);
+      shownLog.push([a.b.v, v]);
+      renderWatch();
+      showBubble(a.b.v + ': ' + v);
+      if (!real) await sleep(stepMs() * 0.6);
+      return true;
+    }
+
     if (a.act === 'sense') {
       if (real) {
         send('WALLS');
@@ -376,6 +429,7 @@
         return false;
       }
       const from = { x: world.bot.x, y: world.bot.y };
+      hideBubble();
       world.bot.x += DX[world.bot.d];
       world.bot.y += DY[world.bot.d];
       if (world.inside(world.bot.x, world.bot.y)) world.entered = true;
@@ -392,8 +446,11 @@
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   /* ---------------- running ---------------- */
+  /* Every run - and every maze of a level with variants - starts with all
+     variables at 0. */
   function startSession() {
     const ctx = makeCtx();
+    resetVars();
     session = { gen: runList(prog, ctx), ctx, actions: 0, alive: true };
     return session;
   }
@@ -401,15 +458,29 @@
   async function advance() {
     if (!session || !session.alive) return false;
     const { value, done: d } = session.gen.next();
-    if (d) { finish(false); return false; }
+    if (d) { programEnded(); return false; }
     if (++session.actions > maxActions()) { finish(false, 'failedLong'); return false; }
     highlight(value.b);
     const ok = await perform(value, session.ctx);
     if (!session.alive) return false;
     if (ok === 'silent') { finish(false, 'botSilent'); return false; }
     if (!ok) { finish(false, 'failedWall'); return false; }
-    if (reachedGoal()) { finish(true); return false; }
+    if (!level().endOnStar && reachedGoal()) { finish(true); return false; }
     return true;
+  }
+
+  /* The program has run to its end. Most tasks are lost by then (a win
+   * stops the run at the goal). Tasks with endOnStar are judged now: the
+   * robot must stand on the star - and, with cells, have driven exactly that
+   * many cells; with countCells, a variable must hold the cells driven. */
+  function programEnded() {
+    const lv = level();
+    if (!lv.endOnStar) { finish(false); return; }
+    if (!reachedGoal()) { finish(false, 'failedOffStar'); return; }
+    const moves = world.moves;
+    if (lv.cells && moves !== lv.cells) { finish(false, 'failedCells', { n: moves, k: lv.cells }); return; }
+    if (lv.countCells && !vars.some((v) => varVal(v) === moves)) { finish(false, 'failedCount', { n: moves }); return; }
+    finish(true);
   }
 
   /* The star; or, for an escape maze, being outside the grid after having
@@ -471,6 +542,7 @@
     $('stepBtn').disabled = on;
     $('botGroup') && $('botGroup').classList.toggle('driving', on);
     syncEdit();
+    syncVarCtl();
   }
 
   let nextMaze = null;            /* timer: same program, next maze (level 6) */
@@ -484,8 +556,10 @@
     world = buildWorld(worldLevel(), 0);
     highlight(null);
     hideVerdict();
+    resetVars();
     drawMaze();
     syncEdit();
+    syncVarCtl();
   }
 
   let lastResult = null;
@@ -499,7 +573,7 @@
     return { blocks: countBlocks(prog), moves, turns, points: 10 * moves + 8 * turns };
   }
 
-  function finish(win, failKey) {
+  function finish(win, failKey, failVars) {
     lastResult = { win: !!win, reason: failKey || (win ? 'goal' : 'failedEnd') };
     lastStats = runStats();
     if (session) session.alive = false;
@@ -536,7 +610,7 @@
       say(t('solvedStars', { n: stars }), 'win', levelIx < LEVELS.length - 1 ? 'next' : null, lastStats);
       celebrate();
     } else {
-      say(t(failKey || 'failedEnd'), 'lose', 'again', lastStats);
+      say(t(failKey || 'failedEnd', failVars), 'lose', 'again', lastStats);
     }
   }
 
@@ -683,6 +757,42 @@
     const [cx, cy] = centre(world.bot.x, world.bot.y);
     g.style.setProperty('--step', stepMs() + 'ms');
     g.setAttribute('transform', 'translate(' + cx.toFixed(1) + ',' + cy.toFixed(1) + ') rotate(' + world.angle + ')');
+  }
+
+  /* "zeige": a speech bubble over the robot with the value. It stays until
+     the robot drives on, the next "zeige", or about one and a half seconds. */
+  let bubbleTimer = null;
+  function showBubble(text) {
+    hideBubble();
+    const svg = $('maze');
+    const { cs } = geom();
+    const [cx, cy] = centre(world.bot.x, world.bot.y);
+    const fs = 17, h = 30, tail = 7;
+    const g = el('g', { id: 'bubble', class: 'bubble' });
+    const txt = el('text', { 'font-size': fs, 'text-anchor': 'middle', 'dominant-baseline': 'central' });
+    txt.textContent = text;
+    g.append(txt);
+    svg.append(g);
+    let w = 0;
+    try { w = txt.getComputedTextLength(); } catch (e) { w = 0; }
+    w = Math.max(40, (w || text.length * fs * 0.55) + 22);
+    const left = Math.max(3, Math.min(400 - w - 3, cx - w / 2));
+    const top = Math.max(3, cy - cs * 0.46 - h - tail);
+    const tx = Math.max(left + 10, Math.min(left + w - 10, cx));
+    g.insertBefore(el('path', { class: 'bubble-box', d:
+      'M' + (left + 8) + ' ' + top + 'H' + (left + w - 8) + 'Q' + (left + w) + ' ' + top + ' ' + (left + w) + ' ' + (top + 8) +
+      'V' + (top + h - 8) + 'Q' + (left + w) + ' ' + (top + h) + ' ' + (left + w - 8) + ' ' + (top + h) +
+      'H' + (tx + 6) + 'L' + tx + ' ' + (top + h + tail) + 'L' + (tx - 6) + ' ' + (top + h) +
+      'H' + (left + 8) + 'Q' + left + ' ' + (top + h) + ' ' + left + ' ' + (top + h - 8) +
+      'V' + (top + 8) + 'Q' + left + ' ' + top + ' ' + (left + 8) + ' ' + top + 'Z' }), txt);
+    txt.setAttribute('x', (left + w / 2).toFixed(1));
+    txt.setAttribute('y', (top + h / 2 + 1).toFixed(1));
+    bubbleTimer = setTimeout(hideBubble, Math.max(1500, stepMs() * 2.5));
+  }
+  function hideBubble() {
+    clearTimeout(bubbleTimer);
+    const b = $('bubble');
+    if (b) b.remove();
   }
 
   function starPath(cx, cy, R, r) {
@@ -978,11 +1088,106 @@
   }
 
   /* ---------------- blocks: rendering ---------------- */
-  function labelNodes(b, template) {
+  const clampNum = (v) => Math.min(NUM_MAX, Math.max(NUM_MIN, Math.round(v)));
+  const stopDrag = (node) => { node.addEventListener('pointerdown', (e) => e.stopPropagation()); return node; };
+
+  function makeSelect(cls, options, value, onChange) {
+    const sel = stopDrag(document.createElement('select'));
+    sel.className = cls;
+    for (const item of options) {
+      if (item.group) {
+        const g = document.createElement('optgroup');
+        g.label = item.group;
+        for (const o of item.options) g.append(option(o, value));
+        sel.append(g);
+      } else {
+        sel.append(option(item, value));
+      }
+    }
+    sel.addEventListener('change', (e) => onChange(e.target.value));
+    return sel;
+  }
+  function option(o, value) {
+    const n = document.createElement('option');
+    n.value = o.value; n.textContent = o.text; n.selected = o.value === value;
+    return n;
+  }
+
+  /* A number from -999 to 999 (setze, aendere, comparisons): type it, or
+     step it with - and +. In the palette and the drag ghost just the value. */
+  function numField(get, set, live) {
+    const wrap = document.createElement('span');
+    wrap.className = 'num num-var';
+    if (!live) {
+      const val = document.createElement('output'); val.textContent = String(get()).replace('-', '\u2212');
+      wrap.append(val);
+      return wrap;
+    }
+    const minus = document.createElement('button'); minus.type = 'button'; minus.textContent = '\u2212';
+    const inp = stopDrag(document.createElement('input'));
+    inp.className = 'num-in';
+    inp.type = 'text';
+    inp.inputMode = 'numeric';
+    inp.maxLength = 4;
+    inp.value = get();
+    inp.setAttribute('aria-label', t('numLabel'));
+    const plus = document.createElement('button'); plus.type = 'button'; plus.textContent = '+';
+    minus.addEventListener('click', (e) => { e.stopPropagation(); set(clampNum(get() - 1)); renderProgram(); });
+    plus.addEventListener('click', (e) => { e.stopPropagation(); set(clampNum(get() + 1)); renderProgram(); });
+    inp.addEventListener('input', () => {
+      const v = parseInt(inp.value.replace('\u2212', '-'), 10);
+      if (Number.isFinite(v)) set(clampNum(v));
+    });
+    inp.addEventListener('change', () => renderProgram());
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') inp.blur(); });
+    wrap.append(minus, inp, plus);
+    return wrap;
+  }
+
+  /* The program's variables to pick from (and the block's own one, should
+     it be missing from the list). */
+  function varOptions(current) {
+    const names = vars.slice();
+    if (current && !names.includes(current)) names.push(current);
+    return names.map((v) => ({ value: v, text: v }));
+  }
+
+  /* The condition: one picker for the six sensor conditions and the
+     variables; a variable adds the comparison (= > <) and its number. */
+  function condNodes(b, live) {
+    const c = b.cond;
+    if (!live && isCompare(c)) {           /* palette and drag ghost: one compact pill */
+      const pill = document.createElement('span');
+      pill.className = 'cond cond-pill';
+      pill.textContent = c.v + ' ' + c.op + ' ' + String(c.n).replace('-', '\u2212');
+      return [pill];
+    }
+    const cur = isCompare(c) ? '#' + c.v : c;
+    const items = [{ group: t('condSensors'), options: CONDITIONS.map((k) => ({ value: k, text: t('c_' + k) })) }];
+    const names = varOptions(isCompare(c) ? c.v : null);
+    if (names.length) items.push({ group: t('condVars'), options: names.map((o) => ({ value: '#' + o.value, text: o.text })) });
+    const sel = makeSelect('cond', items, cur, (val) => {
+      if (val.charAt(0) === '#') {
+        const old = isCompare(b.cond) ? b.cond : null;
+        b.cond = { v: val.slice(1), op: old ? old.op : '=', n: old ? old.n : 5 };
+      } else {
+        b.cond = val;
+      }
+      renderProgram();
+    });
+    if (!isCompare(c)) return [sel];
+    const op = makeSelect('cond cond-op', OPS.map((o) => ({ value: o, text: o })), c.op, (val) => { c.op = val; renderProgram(); });
+    return [sel, op, numField(() => c.n, (v) => { c.n = v; }, live)];
+  }
+
+  function labelNodes(b, template, live) {
     const out = [];
-    const parts = template.split(/(\{n\}|\{c\})/);
+    const def = BLOCKS[b.t];
+    const parts = template.split(/(\{n\}|\{c\}|\{v\})/);
     for (const p of parts) {
-      if (p === '{n}') {
+      if (p === '{n}' && def.num) {
+        out.push(numField(() => b.n, (v) => { b.n = v; }, live));
+      } else if (p === '{n}') {
         const wrap = document.createElement('span');
         wrap.className = 'num';
         const minus = document.createElement('button'); minus.type = 'button'; minus.textContent = '\u2212';
@@ -992,17 +1197,10 @@
         plus.addEventListener('click', (e) => { e.stopPropagation(); b.n = Math.min(9, b.n + 1); renderProgram(); });
         wrap.append(minus, val, plus);
         out.push(wrap);
+      } else if (p === '{v}') {
+        out.push(makeSelect('cond var-pick', varOptions(b.v), b.v, (val) => { b.v = val; renderProgram(); }));
       } else if (p === '{c}') {
-        const sel = document.createElement('select');
-        sel.className = 'cond';
-        for (const c of CONDITIONS) {
-          const o = document.createElement('option');
-          o.value = c; o.textContent = t('c_' + c); o.selected = c === b.cond;
-          sel.append(o);
-        }
-        sel.addEventListener('change', (e) => { b.cond = e.target.value; });
-        sel.addEventListener('pointerdown', (e) => e.stopPropagation());
-        out.push(sel);
+        out.push(...condNodes(b, live));
       } else if (p) {
         out.push(document.createTextNode(p));
       }
@@ -1022,7 +1220,7 @@
     row.className = 'row';
     const gl = document.createElement('span'); gl.className = 'glyph'; gl.textContent = def.glyph;
     const lb = document.createElement('span'); lb.className = 'lbl';
-    lb.append(...labelNodes(b, t('b_' + b.t)));
+    lb.append(...labelNodes(b, t('b_' + b.t), live));
     row.append(gl, lb);
     node.append(row);
 
@@ -1058,25 +1256,228 @@
     const allow = level().allow;
     const groups = {};
     for (const type of allow) (groups[BLOCKS[type].cat] ||= []).push(type);
-    for (const cat of ['move', 'loop', 'decide']) {
+    for (const cat of ['move', 'loop', 'decide', 'var']) {
       if (!groups[cat]) continue;
       const g = document.createElement('div');
+      g.className = 'cat cat-' + cat;
       const h = document.createElement('div'); h.className = 'cat-name'; h.textContent = t('cat_' + cat);
       const box = document.createElement('div'); box.className = 'cat-blocks';
+      if (cat === 'var') {
+        const i = document.createElement('button');
+        i.className = 'info'; i.textContent = 'i'; i.dataset.tipKey = 'i_vars'; i.setAttribute('aria-label', 'Info');
+        h.append(' ', i);
+        box.append(varTools());
+        if (!vars.length) { g.append(h, box); host.append(g); continue; }   /* blocks once a variable exists */
+      }
       for (const type of groups[cat]) box.append(renderBlock(freshBlock(type), null, false));
       g.append(h, box);
       host.append(g);
     }
+    syncVarCtl();
   }
 
   function freshBlock(type) {
     const def = BLOCKS[type];
     const b = { t: type };
     if (def.count) b.n = def.countDefault;
+    if (def.v) b.v = vars[0] || '';
+    if (def.num) b.n = def.numDefault;
     if (def.cond) b.cond = def.condDefault;
+    /* "wiederhole bis" counts to 5 when there is a variable to count with */
+    if (type === 'repeatUntil' && vars.length) b.cond = { v: vars[0], op: '=', n: 5 };
     if (def.body) b.body = [];
     if (def.alt) b.alt = [];
     return b;
+  }
+
+  /* ---------------- variables ----------------
+   * One list of names per program. "Neue Variable" opens a small field
+   * right in the palette (no browser prompt); a name is letters and digits,
+   * a letter first, up to 12, and unique (case does not count). A variable
+   * can be deleted only while no block uses it. */
+  let varFormOpen = false;
+  let varMsg = '';
+
+  function varNameProblem(name, list) {
+    if (!VAR_NAME.test(name)) return 'varBad';
+    const low = name.toLowerCase();
+    if ((list || vars).some((v) => v.toLowerCase() === low)) return 'varTaken';
+    if ((list || vars).length >= VAR_MAX) return 'varFull';
+    return null;
+  }
+
+  function suggestName() {
+    const base = (TEXT[lang] && TEXT[lang].varSuggest) || TEXT.de.varSuggest;
+    for (const s of base) if (!varNameProblem(s)) return s;
+    for (let i = 2; i < 100; i++) if (!varNameProblem(base[1] + i)) return base[1] + i;
+    return '';
+  }
+
+  function varTools() {
+    const box = document.createElement('div');
+    box.className = 'var-tools';
+    if (varFormOpen) {
+      const form = document.createElement('form');
+      form.className = 'var-new';
+      const inp = stopDrag(document.createElement('input'));
+      inp.id = 'varNameIn';
+      inp.className = 'var-ctl';
+      inp.maxLength = 12;
+      inp.autocomplete = 'off';
+      inp.spellcheck = false;
+      inp.value = suggestName();
+      inp.setAttribute('aria-label', t('varName'));
+      const ok = document.createElement('button');
+      ok.type = 'submit'; ok.className = 'var-ok var-ctl'; ok.textContent = 'OK';
+      const no = document.createElement('button');
+      no.type = 'button'; no.className = 'var-x var-ctl'; no.textContent = '\u00d7';
+      no.setAttribute('aria-label', t('varCancel'));
+      const check = () => {
+        const why = inp.value ? varNameProblem(inp.value.trim()) : 'varBad';
+        ok.disabled = !!why || !!session;
+        msg.textContent = inp.value && why ? t(why) : '';
+      };
+      inp.addEventListener('input', check);
+      inp.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); closeVarForm(); } });
+      no.addEventListener('click', closeVarForm);
+      form.addEventListener('submit', (e) => { e.preventDefault(); addVar(inp.value.trim()); });
+      const msg = document.createElement('div');
+      msg.className = 'var-msg';
+      msg.setAttribute('role', 'status');
+      form.append(inp, ok, no);
+      box.append(form, msg);
+      check();
+      setTimeout(() => { if (document.activeElement !== inp && inp.isConnected && !SELFTEST) { inp.focus(); inp.select(); } }, 0);
+    } else {
+      const add = document.createElement('button');
+      add.type = 'button';
+      add.id = 'newVarBtn';
+      add.className = 'var-add var-ctl';
+      const plus = el('svg', { class: 'ico', viewBox: '0 0 16 16', 'aria-hidden': 'true' });
+      plus.append(el('path', { d: 'M8 3v10M3 8h10' }));
+      add.append(plus, document.createTextNode(t('newVar')));
+      add.addEventListener('click', openVarForm);
+      box.append(add);
+      if (varMsg) {
+        const msg = document.createElement('div');
+        msg.className = 'var-msg';
+        msg.setAttribute('role', 'status');
+        msg.textContent = varMsg;
+        box.append(msg);
+      }
+    }
+    if (vars.length) {
+      const list = document.createElement('div');
+      list.className = 'var-chips';
+      for (const v of vars) {
+        const chip = document.createElement('span');
+        chip.className = 'var-chip';
+        const name = document.createElement('span'); name.textContent = v;
+        const del = document.createElement('button');
+        del.type = 'button'; del.className = 'var-del var-ctl'; del.textContent = '\u00d7';
+        del.setAttribute('aria-label', t('varDel', { v }));
+        del.addEventListener('click', () => deleteVar(v));
+        chip.append(name, del);
+        list.append(chip);
+      }
+      box.append(list);
+    }
+    return box;
+  }
+
+  function openVarForm() { if (session) return; varFormOpen = true; varMsg = ''; renderPalette(); }
+  function closeVarForm() { varFormOpen = false; renderPalette(); }
+
+  /* true if the name was added */
+  function addVar(name) {
+    if (session) return false;
+    const why = varNameProblem(name);
+    if (why) { varMsg = t(why); if (!varFormOpen) renderPalette(); return false; }
+    vars.push(name);
+    varFormOpen = false;
+    varMsg = '';
+    varsChanged();
+    return true;
+  }
+
+  function varUsed(name, list) {
+    for (const b of list || prog) {
+      if (b.v === name || (isCompare(b.cond) && b.cond.v === name)) return true;
+      if ((b.body && varUsed(name, b.body)) || (b.alt && varUsed(name, b.alt))) return true;
+    }
+    return false;
+  }
+
+  /* true if deleted; a variable that a block still uses stays */
+  function deleteVar(name) {
+    if (session) return false;
+    if (varUsed(name)) { varMsg = t('varUsed', { v: name }); renderPalette(); return false; }
+    vars.splice(vars.indexOf(name), 1);
+    varVals.delete(name);
+    varMsg = '';
+    varsChanged();
+    return true;
+  }
+
+  function varsChanged() {
+    renderPalette();
+    renderProgram();          /* the pickers in the blocks list the new names; saves */
+    renderWatch();
+  }
+
+  /* nothing about variables changes while a program runs */
+  function syncVarCtl() {
+    document.querySelectorAll('#paletteList .var-ctl').forEach((c) => { c.disabled = !!session; });
+  }
+
+  /* ---------------- the watch panel ----------------
+   * Next to the maze: every variable and its value now. The one that
+   * changed last has a gold outline (and blinks once); all start at 0 with
+   * each run. Under it, what "zeige" showed in this run. */
+  function resetVars() {
+    varVals = new Map();
+    lastChanged = null;
+    shownLog = [];
+    hideBubble();
+    renderWatch();
+  }
+
+  function setVarValue(name, value) {
+    const changed = varVal(name) !== value;
+    varVals.set(name, value);
+    if (changed) lastChanged = name;
+    renderWatch(changed ? name : null);
+  }
+
+  function renderWatch(bump) {
+    const box = $('watch');
+    if (!box) return;
+    box.hidden = !vars.length;
+    const list = $('watchList');
+    list.textContent = '';
+    for (const v of vars) {
+      const item = document.createElement('span');
+      item.className = 'wv' + (v === lastChanged ? ' is-new' : '') + (v === bump ? ' bump' : '');
+      item.dataset.var = v;
+      const name = document.createElement('span'); name.className = 'wv-name'; name.textContent = v;
+      const val = document.createElement('output'); val.className = 'wv-val'; val.textContent = String(varVal(v)).replace('-', '\u2212');
+      item.append(name, val);
+      list.append(item);
+    }
+    const log = $('watchLog');
+    log.textContent = '';
+    log.hidden = !shownLog.length;
+    if (shownLog.length) {
+      const head = document.createElement('span'); head.className = 'wl-head'; head.textContent = t('shown');
+      log.append(head);
+      const from = Math.max(0, shownLog.length - 8);       /* the last eight */
+      if (from) log.append(document.createTextNode('\u2026'));
+      for (const [v, n] of shownLog.slice(from)) {
+        const s = document.createElement('span'); s.className = 'wl-item';
+        s.textContent = v + ': ' + String(n).replace('-', '\u2212');
+        log.append(s);
+      }
+    }
   }
 
   function renderProgram() {
@@ -1280,6 +1681,9 @@
     saveProg();
     levelIx = i;
     prog = progs[level().id] || [];
+    vars = varsBy[level().id] || [];
+    varFormOpen = false;
+    varMsg = '';
     resetRun();
     renderLevels();
     renderTask();
@@ -1343,18 +1747,26 @@
   }
 
   /* ---------------- program files ----------------
-   * Speichern downloads {version:1, level, lang, prog} as
+   * Speichern downloads {version:2, level, lang, vars, prog} as
    * ratrocket-aufgabe<N>.json - on level 7 with the pupil's maze as well.
+   * vars lists the program's variable names. Version 1 files (before
+   * variables: no vars) still open.
    * Opening is strict: JSON.parse only (nothing in a file ever runs), known
-   * block types and conditions only, repeat counts clamped to 1..9, and any
-   * other key is dropped. A bad file changes nothing. */
+   * block types and conditions only, variable names valid and declared,
+   * repeat counts clamped to 1..9, other numbers to -999..999, and any other
+   * key is dropped. A bad file changes nothing. */
   const FILE_MAX = 200000, FILE_BLOCKS = 500, FILE_DEPTH = 12;
+  const FILE_VERSION = 2;
+  const V1_TYPES = ['move', 'right', 'left', 'around', 'repeat', 'untilOut', 'ifElse'];
+
+  const condData = (c) => (isCompare(c) ? { v: c.v, op: c.op, n: c.n } : c);
 
   function progData(list) {
     return list.map((b) => {
       const def = BLOCKS[b.t], o = { t: b.t };
-      if (def.count) o.n = b.n;
-      if (def.cond) o.cond = b.cond;
+      if (def.v) o.v = b.v;
+      if (def.count || def.num) o.n = b.n;
+      if (def.cond) o.cond = condData(b.cond);
       if (def.body) o.body = progData(b.body || []);
       if (def.alt) o.alt = progData(b.alt || []);
       return o;
@@ -1363,7 +1775,7 @@
 
   function exportData() {
     const lv = level();
-    const data = { version: 1, level: lv.id, lang, prog: progData(prog) };
+    const data = { version: FILE_VERSION, level: lv.id, lang, vars: vars.slice(), prog: progData(prog) };
     if (lv.sandbox) data.maze = Object.assign({ n: sandbox.n }, JSON.parse(JSON.stringify(sbMaze())));
     return data;
   }
@@ -1383,38 +1795,69 @@
     say(t('saved', { f: name }));
   }
 
-  function cleanList(list, depth, count) {
+  const isNum = (n) => typeof n === 'number' && isFinite(n);
+  const isObj = (o) => !!o && typeof o === 'object' && !Array.isArray(o);
+
+  /* A list of variable names: valid, unique, at most VAR_MAX; or null. */
+  function cleanVars(list) {
+    if (!Array.isArray(list) || list.length > VAR_MAX) return null;
+    const out = [];
+    for (const v of list) {
+      if (typeof v !== 'string' || varNameProblem(v, out)) return null;
+      out.push(v);
+    }
+    return out;
+  }
+
+  /* A condition: one of the six sensor conditions, or a comparison of a
+     declared variable: {v, op, n}. */
+  function cleanCond(c, names) {
+    if (typeof c === 'string') return CONDITIONS.includes(c) ? c : null;
+    if (!isObj(c) || !names.includes(c.v) || !OPS.includes(c.op) || !isNum(c.n)) return null;
+    return { v: c.v, op: c.op, n: clampNum(c.n) };
+  }
+
+  function cleanList(list, depth, count, names) {
     if (!Array.isArray(list) || depth > FILE_DEPTH) return null;
     const out = [];
     for (const b of list) {
-      if (!b || typeof b !== 'object' || Array.isArray(b)) return null;
+      if (!isObj(b)) return null;
       if (typeof b.t !== 'string' || !Object.prototype.hasOwnProperty.call(BLOCKS, b.t)) return null;
+      if (count.v1 && !V1_TYPES.includes(b.t)) return null;   /* a version-1 file knows only these */
       if (++count.n > FILE_BLOCKS) return null;
       const def = BLOCKS[b.t], o = { t: b.t };
+      if (def.v) {
+        if (!names.includes(b.v)) return null;          /* unknown variable */
+        o.v = b.v;
+      }
       if (def.count) {
-        if (typeof b.n !== 'number' || !isFinite(b.n)) return null;
+        if (!isNum(b.n)) return null;
         o.n = Math.min(9, Math.max(1, Math.round(b.n)));
       }
-      if (def.cond) {
-        if (!CONDITIONS.includes(b.cond)) return null;
-        o.cond = b.cond;
+      if (def.num) {
+        if (!isNum(b.n)) return null;
+        o.n = clampNum(b.n);
       }
-      if (def.body && !(o.body = cleanList(b.body, depth + 1, count))) return null;
-      if (def.alt && !(o.alt = cleanList(b.alt, depth + 1, count))) return null;
+      if (def.cond && !(o.cond = cleanCond(b.cond, names))) return null;
+      if (def.body && !(o.body = cleanList(b.body, depth + 1, count, names))) return null;
+      if (def.alt && !(o.alt = cleanList(b.alt, depth + 1, count, names))) return null;
       out.push(o);
     }
     return out;
   }
 
-  /* file text -> {level, prog, maze?} or null */
+  /* file text -> {level, vars, prog, maze?} or null. Version 1 has no
+     variables (a vars key there is ignored), version 2 must list them. */
   function parseFile(text) {
     if (typeof text !== 'string' || text.length > FILE_MAX) return null;
     let d;
     try { d = JSON.parse(text); } catch (e) { return null; }
-    if (!d || typeof d !== 'object' || Array.isArray(d) || d.version !== 1) return null;
-    const p = cleanList(d.prog, 0, { n: 0 });
+    if (!isObj(d) || (d.version !== 1 && d.version !== 2)) return null;
+    const names = d.version === 1 ? [] : cleanVars(d.vars);
+    if (!names) return null;
+    const p = cleanList(d.prog, 0, { n: 0, v1: d.version === 1 }, names);
     if (!p) return null;
-    const out = { level: Number.isInteger(d.level) ? d.level : null, prog: p };
+    const out = { level: Number.isInteger(d.level) ? d.level : null, vars: names, prog: p };
     if (d.maze != null) {
       const n = d.maze.n;
       const m = sbClean(d.maze, n);
@@ -1436,6 +1879,10 @@
     if (session) stopRun();
     const lv = level();
     prog = data.prog;
+    vars = data.vars;
+    varFormOpen = false;
+    varMsg = '';
+    saveProg();
     if (data.maze && lv.sandbox) {
       sandbox.n = data.maze.n;
       sandbox.mazes[data.maze.n] = data.maze.m;
@@ -1443,6 +1890,7 @@
     }
     resetRun();
     renderTask();
+    renderPalette();
     renderProgram();
     const from = data.level !== lv.id && LEVELS.some((l) => l.id === data.level);
     say(from ? t('loadedFrom', { n: data.level }) : t('loaded'));
@@ -1493,7 +1941,7 @@
       't-speed': 'speed', 't-robotCard': 'robotCard', 't-sensorCard': 'sensorCard',
       't-cellLabel': 'cellLabel', 't-save': 'save', 't-open': 'open', 'driveLink': 'driveLink',
       't-sbWalls': 'sbWalls', 't-sbStart': 'sbStart', 't-sbGoal': 'sbGoal',
-      'sbClear': 'sbClear', 'sbRandom': 'sbRandom',
+      'sbClear': 'sbClear', 'sbRandom': 'sbRandom', 't-watch': 'watch',
     };
     for (const id in map) { const n = $(id); if (n) n.textContent = t(map[id]); }
     $('sbSize').setAttribute('aria-label', t('sbSize'));
@@ -1504,7 +1952,7 @@
     $('runBtn').textContent = t('run');
     $('stepBtn').textContent = t('step');
     $('resetBtn').textContent = t('reset');
-    renderLevels(); renderTask(); renderPalette(); renderProgram();
+    renderLevels(); renderTask(); renderPalette(); renderProgram(); renderWatch();
   }
 
   function setLink(cls, text) {
@@ -1513,13 +1961,49 @@
   }
 
   /* ---------------- persistence ---------------- */
-  function saveProg() { progs[level().id] = prog; }
+  function saveProg() { progs[level().id] = prog; varsBy[level().id] = vars; }
+  /* what goes into localStorage (variables: field vars, per level id) */
+  const storeData = () => ({ lang, levelIx, progs, done, sandbox, vars: varsBy });
   function save() {
     if (SELFTEST) return;                 /* the self-test must not overwrite real work */
     try {
-      localStorage.setItem(STORE, JSON.stringify({ lang, levelIx, progs, done, sandbox }));
+      localStorage.setItem(STORE, JSON.stringify(storeData()));
     } catch (e) { /* private mode */ }
   }
+
+  /* Stored variable lists, checked like a file's; a list that is not valid
+     is dropped. Then every name a stored program uses is added back if it is
+     a valid name, so a program never points at a missing variable. */
+  function restoreVars(s, programs) {
+    const out = {};
+    if (isObj(s)) {
+      for (const id of Object.keys(s)) {
+        const list = cleanVars(s[id]);
+        if (list && LEVELS.some((lv) => String(lv.id) === id)) out[id] = list;
+      }
+    }
+    const walk = (list, names) => {
+      if (!Array.isArray(list)) return;
+      for (const b of list) {
+        if (!isObj(b)) continue;
+        for (const v of [b.v, isCompare(b.cond) ? b.cond.v : null]) {
+          if (typeof v === 'string' && !names.includes(v) && !varNameProblem(v, names)) names.push(v);
+        }
+        walk(b.body, names);
+        walk(b.alt, names);
+      }
+    };
+    if (isObj(programs)) {
+      for (const id of Object.keys(programs)) {
+        if (!LEVELS.some((lv) => String(lv.id) === id)) continue;
+        const names = out[id] || [];
+        walk(programs[id], names);
+        if (names.length) out[id] = names;
+      }
+    }
+    return out;
+  }
+
   function load() {
     sandbox = sbFresh();
     try {
@@ -1530,6 +2014,7 @@
       if (s.progs && typeof s.progs === 'object') progs = s.progs;
       if (s.done && typeof s.done === 'object') done = s.done;
       sandbox = sbRestore(s.sandbox);
+      varsBy = restoreVars(s.vars, progs);
     } catch (e) { /* ignore */ }
   }
 
@@ -1549,6 +2034,7 @@
       if (i >= 0) levelIx = i;
     }
     prog = progs[LEVELS[levelIx].id] || [];
+    vars = varsBy[LEVELS[levelIx].id] || [];
     world = buildWorld(worldLevel(), 0);
 
     document.addEventListener('pointerdown', onPointerDown);
@@ -1589,6 +2075,11 @@
         LEVELS,
         get prog() { return prog; },
         setProg(p) { prog = p; renderProgram(); },
+        /* variables: the open program's names, and the values now */
+        get vars() { return vars.slice(); },
+        get varValues() { const o = {}; for (const v of vars) o[v] = varVal(v); return o; },
+        setVars(list) { vars = list.slice(); saveProg(); varFormOpen = false; varMsg = ''; resetVars(); renderPalette(); renderProgram(); },
+        addVar, deleteVar, varNameProblem, stepOnce, storeData, restoreVars,
         get world() { return world; },
         get lastResult() { return lastResult; },
         get done() { return Object.assign({}, done); },

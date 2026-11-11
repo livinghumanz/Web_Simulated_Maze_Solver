@@ -2,8 +2,9 @@
 
 **Woche 2 · Stunde 3–4 · ab 9 Jahren (Kern: 10–14) · Leiter-Sprossen 2 und 3**
 **Software:** Roboter-Seite **verfügbar** (Betriebsarten, Start-Meldungen, Fahrbefehle).
-Oberflächen: heute die englische Testseite `web/maze_event.html` mit Befehlsfeld;
-eine deutsche Fernsteuer-Seite mit Pfeiltasten ist **geplant – Stand November 2026**.
+Oberflächen: die deutsche **Fernsteuerung** `web/drive.html` mit Pfeiltasten (**verfügbar**,
+Stunde 4) und die englische Testseite `web/maze_event.html` mit Befehlsfeld (Stunde 3 und
+Knobelaufgaben).
 
 Nach dem ersten Programmieren schauen die Kinder in die Maschine: Ein Roboter hat mehrere
 Programme an Bord und wählt beim Start mit kleinen Schaltern eines aus. Dann stecken sie
@@ -19,8 +20,9 @@ Die SuS können …
 2. eine Schalterstellung als Zahl lesen (SW1 = 1, SW2 = 2, SW3 = 4) und begründen, warum es
    mit drei Schaltern acht Möglichkeiten gibt,
 3. ein Elektronik-Modul sicher einstecken (Strom aus, Beschriftung vergleichen, prüfen lassen),
-4. den Roboter mit Textbefehlen fernsteuern und erklären, dass jeder Baustein in RatRocket
-   Code ebenfalls nur einen Befehl schickt (`fahre 1 Feld` = `CELL`),
+4. den Roboter mit der Fernsteuerung fernsteuern und erklären, dass jeder Knopf dort und
+   jeder Baustein in RatRocket Code nur einen Befehl schickt (Pfeil nach oben = `FWD 160`,
+   `fahre 1 Feld` = `CELL`),
 5. Fernsteuern und Programmieren vergleichen: Wer entscheidet wann?
 
 ## Die Testseite in zwei Sätzen
@@ -69,7 +71,8 @@ Die Betriebsarten (aus `docs/firmware.md`; SW4 hat keine Funktion):
 ## Stunde 4 – Bluetooth einstecken und fernsteuern
 
 **Material:** je Team Roboter mit eigenem Strom (Akku oder Powerbank), ein HC-05-Bluetooth-Modul,
-Laptop mit Testseite, Befehlskarte (unten), am Boden ein Klebeband-Parcours (Garage 25 × 25 cm,
+Laptop mit der **Fernsteuerung** `web/drive.html` (in RatRocket Code oben rechts
+**Fernsteuerung**), Knopfkarte (unten), am Boden ein Klebeband-Parcours (Garage 25 × 25 cm,
 zwei Becher als Slalom), Entdeckerheft. **Fernsteuern nur auf dem Boden**, nicht auf Tischen.
 **Simulation / Roboter:** nur Roboter, Labyrinth-Modus.
 
@@ -80,27 +83,33 @@ Namen – sonst heißen alle „RatRocket" und die Teams verbinden sich mit frem
 Umbenennen geht im Bluetooth-Test mit `BTNAME <name>` (dabei die Taste am Modul halten,
 siehe Knobelaufgabe); das erledigt am besten der Makerspace vorab.
 
-Befehlskarte „Fernsteuern" (Labyrinth-Modus; groß/klein egal):
+Knopfkarte „Fernsteuerung" (Labyrinth-Modus: SW3 an, SW1 und SW2 aus). Jeder Knopf schickt
+genau einen Befehl – derselbe, den man auf der Testseite tippen könnte:
 
-| Befehl | Was passiert |
-|---|---|
-| `FWD 160` | 160 mm vorwärts (ein Feld) |
-| `FWD -160` | ein Feld rückwärts |
-| `TURN 90` / `TURN -90` | auf der Stelle nach rechts / nach links drehen |
-| `TURN 180` | umdrehen |
-| `FWD 320 120` | 320 mm mit 120 mm/s (Standard sind 80 mm/s) |
-| `STOP` | sofort anhalten |
-| `CELL` | genau das, was der Baustein `fahre 1 Feld` schickt |
-| `WALLS` | genau das, was ein `wenn`-Baustein fragt: Wände vorne, links, rechts |
+| Knopf | Befehl | Was passiert |
+|---|---|---|
+| **Vorwärts** (Pfeil hoch) | `FWD 160` | 160 mm vorwärts – ein Feld; mit **½ Feld** `FWD 80` |
+| **Rückwärts** (Pfeil runter) | `FWD -160` | ein Feld rückwärts (ältere Firmware: Hinweis „nimm Links zweimal") |
+| **Links** / **Rechts** | `TURN -90` / `TURN 90` | auf der Stelle eine Vierteldrehung |
+| **Tempo** langsam / mittel / schnell | `VRUN 50` / `80` / `120` | Fahrtempo in mm/s |
+| **STOPP** (Leertaste, Esc) | `STOP` | sofort anhalten – geht immer |
+
+Während ein Befehl läuft, sind die Pfeile gesperrt, bis der Roboter „fertig" meldet. Die
+Pfeiltasten der Tastatur fahren auch.
+
+Befehlskarte für Profis (Testseite, für die Knobelaufgaben; groß/klein egal): `FWD 40`
+(beliebige mm, auch negativ), `TURN 20` (beliebige Grad), `FWD 320 120` (320 mm mit
+120 mm/s), `CELL` (genau das, was `fahre 1 Feld` schickt), `WALLS` (genau das, was ein
+`wenn`-Baustein fragt: Wände vorne, links, rechts).
 
 | Phase | Min | Ablauf |
 |---|---|---|
 | Einstieg | 5 | „Bis jetzt hing der Roboter an der Leine. Heute schneiden wir sie ab." Modul zeigen. Drei Sicherheitsregeln an die Tafel: **Strom aus. Beschriftung vergleichen (VCC an +5V, GND an GND). Erst die Lehrkraft prüft, dann einschalten.** Falsch herum eingesteckt kann ein Modul kaputtgehen. |
-| Erarbeitung I | 12 | Einstecken, „Piloten-Check" durch die Lehrkraft, einschalten: Die LED am Modul blinkt schnell = wartet auf einen Partner. Koppeln (Windows: Einstellungen → Bluetooth → Gerät hinzufügen, Name vom Aufkleber, PIN `1234`). Testseite: **Connect robot**, den Bluetooth-Anschluss wählen, `PING` senden → `PONG`. Das Blinken ändert sich: verbunden. |
-| Erarbeitung II | 20 | **Fernsteuer-Parcours** am Boden: aus der Startlinie in die Garage einparken, dann Slalom um die Becher. Wertung: so wenige Befehle wie möglich, die Garage muss getroffen sein. Danach probiert jedes Team `CELL` und `WALLS` – genau diese Befehle schickt RatRocket Code, wenn ein Programm läuft. |
+| Erarbeitung I | 12 | Einstecken, „Piloten-Check" durch die Lehrkraft, einschalten: Die LED am Modul blinkt schnell = wartet auf einen Partner. Koppeln (Windows: Einstellungen → Bluetooth → Gerät hinzufügen, Name vom Aufkleber, PIN `1234`). Fernsteuerung öffnen: **Roboter verbinden**, den Bluetooth-Anschluss wählen – die Seite meldet „Bereit. Drück einen Pfeil." und das Blinken am Modul ändert sich: verbunden. |
+| Erarbeitung II | 20 | **Fernsteuer-Parcours** am Boden: aus der Startlinie in die Garage einparken, dann Slalom um die Becher. Wertung: so wenige Knopfdrücke wie möglich, die Garage muss getroffen sein; **½ Feld** und **Tempo** sind erlaubt. Zum Schluss: Wie viele Pfeildrücke sind ein Feld im Labyrinth? (Einer: `FWD 160` sind 16 cm.) RatRocket Code schickt für `fahre 1 Feld` den Befehl `CELL` – derselbe Gedanke. |
 | Sicherung | 8 | Merksatz: *Fernsteuern: Ich schicke jeden Befehl selbst und entscheide in jedem Moment. Programmieren: Ich schreibe alle Befehle vorher auf, der Computer schickt sie.* Entdeckerheft: „Wofür ist Fernsteuern besser, wofür ein Programm?" |
 
-**Knobelaufgabe (für Schnelle):**
+**Knobelaufgabe (für Schnelle, getippt auf der Testseite – die Fernsteuerung dreht nur um 90°):**
 - *Sechseck:* Fahre ein regelmäßiges Sechseck und komm genau am Start an. Welcher Winkel an
   jeder Ecke? (60°, denn sechs Ecken ergeben zusammen eine volle Drehung von 360°.) Und ein
   Zwölfeck? Wie viele Befehle insgesamt?
@@ -114,15 +123,16 @@ Befehlskarte „Fernsteuern" (Labyrinth-Modus; groß/klein egal):
 
 **Entdeckerheft:** Parcours-Protokoll (Befehle, Treffer, Abweichung).
 
-**Geplant – Stand November 2026:** eine Fernsteuer-Seite mit Pfeiltasten wie bei einem
-Spielzeugauto. Die Roboter-Befehle dafür gibt es schon (`FWD`, `TURN`, `STOP`; im PID-Test
-zusätzlich `SPD <links> <rechts> [ms]` für dauerndes Fahren). Bis dahin wird getippt – für
-10- bis 14-Jährige erfahrungsgemäß eher ein Reiz („wie Hacker") als eine Hürde.
+**Verfügbar:** die Fernsteuerung `web/drive.html` – ein Steuerkreuz wie bei einem
+Spielzeugauto, deutsch und englisch, ab etwa 8 Jahren. Wer tippen möchte (Sechseck, Kreis,
+Taufe), nimmt die Testseite – für 10- bis 14-Jährige erfahrungsgemäß eher ein Reiz („wie
+Hacker") als eine Hürde. Dauerndes Fahren (`SPD <links> <rechts> [ms]` im PID-Test) gibt es
+nur getippt.
 
 ## Differenzierung
 
-- **Unterstützung:** Befehlskarte laminiert neben den Laptop; Teams mit festen Rollen
-  (Fahrer:in tippt, Beobachter:in misst, Protokoll); in Stunde 3 nur drei Modi erkunden
+- **Unterstützung:** Befehls- und Knopfkarte laminiert neben den Laptop; Teams mit festen Rollen
+  (Fahrer:in drückt oder tippt, Beobachter:in misst, Protokoll); in Stunde 3 nur drei Modi erkunden
   (1, 4 und eine „leere" Zahl).
 - **Herausforderung:** Knobelaufgaben; im Parcours „Rückwärts einparken"; Sechseck mit
   Zielgenauigkeit im Zentimeterbereich.
@@ -136,7 +146,7 @@ zusätzlich `SPD <links> <rechts> [ms]` für dauerndes Fahren). Bis dahin wird g
 | `HELP` bekommt keine Antwort | Modus 0 oder eine Zahl ohne Modus | Schalter prüfen; das ist eine richtige Beobachtung, kein Fehler |
 | Modul-LED bleibt dunkel | Strom aus, Modul verkehrt oder nicht ganz eingesteckt | ausschalten, Lage mit dem Foto vergleichen, Lehrkraft |
 | In der Anschluss-Liste stehen zwei Bluetooth-Einträge | Windows legt zwei Anschlüsse an | den anderen Eintrag wählen |
-| `PING` geht, aber `FWD` bewegt nichts | nicht im Labyrinth-Modus (z. B. noch Bluetooth-Test: Motoren aus) | SW3 an, SW1/SW2 aus, Reset |
+| Verbunden, aber Pfeil oder `FWD` bewegt nichts | nicht im Labyrinth-Modus (z. B. noch Bluetooth-Test: Motoren aus) | SW3 an, SW1/SW2 aus, Reset |
 | Roboter fährt beim falschen Team los | alle Roboter heißen gleich | Namen umbenennen (Taufe), Aufkleber |
 | „? unknown" im Log | Tippfehler oder Befehl gibt es in diesem Modus nicht | `HELP` zeigt, was geht |
 

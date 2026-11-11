@@ -11,18 +11,29 @@
   'use strict';
 
   /* ---------------- blocks ---------------- */
-  /* cat drives the colour, body = can hold other blocks inside. */
+  /* cat drives the colour, body = can hold other blocks inside.
+   * count: a repeat count n, 1..9.  num: a number n, -999..999.
+   * v: names one of the program's variables.  cond: a condition (below). */
   const BLOCKS = {
-    move:     { cat: 'move',   glyph: '\u25b2' },
-    right:    { cat: 'move',   glyph: '\u21b7' },
-    left:     { cat: 'move',   glyph: '\u21b6' },
-    around:   { cat: 'move',   glyph: '\u21bb' },
-    repeat:   { cat: 'loop',   glyph: '\u21ba', body: true, count: true, countDefault: 3 },
-    untilOut: { cat: 'loop',   glyph: '\u2691', body: true },
-    ifElse:   { cat: 'decide', glyph: '\u2ba7', body: true, alt: true, cond: true, condDefault: 'rightFree' },
+    move:        { cat: 'move',   glyph: '\u25b2' },
+    right:       { cat: 'move',   glyph: '\u21b7' },
+    left:        { cat: 'move',   glyph: '\u21b6' },
+    around:      { cat: 'move',   glyph: '\u21bb' },
+    repeat:      { cat: 'loop',   glyph: '\u21ba', body: true, count: true, countDefault: 3 },
+    untilOut:    { cat: 'loop',   glyph: '\u2691', body: true },
+    repeatUntil: { cat: 'loop',   glyph: '\u27f3', body: true, cond: true, condDefault: 'frontWall' },
+    ifElse:      { cat: 'decide', glyph: '\u2ba7', body: true, alt: true, cond: true, condDefault: 'rightFree' },
+    setVar:      { cat: 'var',    glyph: '=',      v: true, num: true, numDefault: 0 },
+    changeVar:   { cat: 'var',    glyph: '\u00b1', v: true, num: true, numDefault: 1 },
+    showVar:     { cat: 'var',    glyph: '\u25c9', v: true },
   };
 
+  /* A condition is EITHER a sensor condition - one of these six strings -
+   * OR a comparison {v, op, n}: variable v compared with the number n.
+   * Both work in "wenn" and in "wiederhole bis". */
   const CONDITIONS = ['frontFree', 'frontWall', 'rightFree', 'rightWall', 'leftFree', 'leftWall'];
+  const OPS = ['=', '>', '<'];
+  const NUM_MIN = -999, NUM_MAX = 999;
 
   /* ---------------- texts ---------------- */
   const TEXT = {
@@ -95,6 +106,31 @@
       cat_move: 'Fahren',
       cat_loop: 'Wiederholen',
       cat_decide: 'Entscheiden',
+      /* variables: {v} = variable field; in a comparison {c} also gets op and number */
+      cat_var: 'Variablen',
+      b_repeatUntil: 'wiederhole bis {c}',
+      b_setVar: 'setze {v} auf {n}',
+      b_changeVar: '\u00e4ndere {v} um {n}',
+      b_showVar: 'zeige {v}',
+      condSensors: 'Sensoren',
+      condVars: 'Variablen',
+      newVar: 'Neue Variable',
+      varName: 'Name der Variable',
+      numLabel: 'Zahl',
+      varCancel: 'Abbrechen',
+      varDel: '{v} l\u00f6schen',
+      varSuggest: ['Schritte', 'Z\u00e4hler'],
+      varBad: 'Nur Buchstaben und Ziffern, vorne ein Buchstabe, h\u00f6chstens 12.',
+      varTaken: 'Den Namen gibt es schon.',
+      varUsed: '{v} steckt noch in einem Baustein.',
+      varFull: 'H\u00f6chstens 12 Variablen.',
+      watch: 'Variablen',
+      shown: 'Gezeigt',
+      i_vars: 'Eine Variable ist ein Zettel mit Namen, auf dem sich das Programm eine Zahl merkt. Bei jedem Start steht 0 darauf. Im wenn- und im wiederhole-bis-Baustein kannst du sie vergleichen: = gleich, > gr\u00f6\u00dfer als, < kleiner als.',
+      i_watch: 'Was gerade auf jedem Zettel steht. Gold umrandet: was sich zuletzt ge\u00e4ndert hat. Darunter: was \u201ezeige\u201c gezeigt hat.',
+      failedOffStar: 'Das Programm ist zu Ende \u2013 aber du stehst nicht auf dem Stern.',
+      failedCount: 'Am Stern! Aber keine Variable hat deine {n} Felder gez\u00e4hlt.',
+      failedCells: 'Auf dem Stern \u2013 aber nach {n} Feldern. Genau {k} sollen es sein.',
       /* info tooltips */
       i_connect: 'Verbinde den Roboter per USB-C-Kabel oder Bluetooth. Ohne Roboter kannst du alles in der Simulation ausprobieren.',
       i_program: 'Die Bausteine laufen von oben nach unten. Bausteine mit Bauch nehmen andere Bausteine auf.',
@@ -199,6 +235,30 @@
       cat_move: 'Drive',
       cat_loop: 'Repeat',
       cat_decide: 'Decide',
+      cat_var: 'Variables',
+      b_repeatUntil: 'repeat until {c}',
+      b_setVar: 'set {v} to {n}',
+      b_changeVar: 'change {v} by {n}',
+      b_showVar: 'show {v}',
+      condSensors: 'Sensors',
+      condVars: 'Variables',
+      newVar: 'New variable',
+      varName: 'Variable name',
+      numLabel: 'Number',
+      varCancel: 'Cancel',
+      varDel: 'Delete {v}',
+      varSuggest: ['Steps', 'Counter'],
+      varBad: 'Letters and digits only, a letter first, at most 12.',
+      varTaken: 'That name is taken.',
+      varUsed: '{v} is still used in a block.',
+      varFull: 'At most 12 variables.',
+      watch: 'Variables',
+      shown: 'Shown',
+      i_vars: 'A variable is a named note on which the program keeps a number. Every run starts at 0. In the if and repeat-until blocks you can compare it: = equal, > greater than, < less than.',
+      i_watch: 'What each note says right now. Gold outline: what changed last. Below: what "show" showed.',
+      failedOffStar: 'The program ended \u2013 but you are not standing on the star.',
+      failedCount: 'At the star! But no variable counted your {n} cells.',
+      failedCells: 'On the star \u2013 but after {n} cells. It must be exactly {k}.',
       i_connect: 'Connect the robot with a USB-C cable or Bluetooth. Without a robot you can try everything in the simulation.',
       i_program: 'Blocks run from top to bottom. Blocks with a belly hold other blocks.',
       i_where: 'Simulation: everything happens on screen. Real robot: every block is driven.',
@@ -241,6 +301,9 @@
    * game on the other page starts outside an entry - not this page.)
    * goal: either a star cell, or 'out' for the escape levels.
    * par: blocks needed for three stars.
+   * variants: more mazes for the same program; a variant may move the star.
+   * Ids are stable (progress and programs are stored by id): 7 stays the
+   * own maze, the variable tasks 8 and 9 come after it.
    * sandbox: the pupil draws the maze (level 7). code.js keeps one maze per
    * grid size; walls, goal and n here are only the empty 3x3 it starts from. */
   const LEVELS = [
@@ -329,10 +392,48 @@
       hint: { de: 'Fang mit wenigen W\u00e4nden an. Schafft dein Programm aus Aufgabe 5 auch dein Labyrinth?',
               en: 'Start with a few walls. Does your program from task 5 beat your maze too?' },
       n: 3, walls: [], start: { x: 0, y: 0, d: 'N' }, goal: { x: 2, y: 2 },
-      allow: ['move', 'right', 'left', 'around', 'repeat', 'untilOut', 'ifElse'], par: null,
+      allow: ['move', 'right', 'left', 'around', 'repeat', 'untilOut', 'repeatUntil', 'ifElse',
+              'setVar', 'changeVar', 'showVar'], par: null,
       sandbox: true,
+    },
+    {
+      /* The first variable task. endOnStar: the star is judged when the
+       * program ENDS (so the last "aendere" after the last move still runs);
+       * countCells: some variable must then hold the number of cells driven.
+       * A U-shaped corridor, 6 cells: 2 up, 2 right, 2 down. */
+      id: 8,
+      name: { de: 'Z\u00e4hl mit!', en: 'Count along!' },
+      task: { de: 'Fahre zum Stern. Am Ende soll eine Variable wissen, wie viele Felder du gefahren bist.',
+              en: 'Drive to the star. At the end a variable must know how many cells you drove.' },
+      hint: { de: 'Leg unter Variablen eine neue Variable an, zum Beispiel Schritte. Nach jedem \u201efahre 1 Feld\u201c: \u00e4ndere Schritte um 1.',
+              en: 'Make a new variable under Variables, for example Steps. After every "move 1 cell": change Steps by 1.' },
+      n: 3, walls: ['0,0,E', '0,1,E', '1,0,E', '1,1,E', '1,1,N'],
+      start: { x: 0, y: 0, d: 'N' }, goal: { x: 2, y: 0 },
+      endOnStar: true, countCells: true,
+      allow: ['move', 'right', 'left', 'repeat', 'setVar', 'changeVar', 'showVar'], par: 6,
+    },
+    {
+      /* Stop after exactly 5 cells, on the star, in three mazes. The corridor
+       * goes on past the star, so "drive until a wall" overshoots, and the
+       * mazes need 2, 3 and 2 right turns before cell 5 - no fixed number of
+       * loop rounds fits all three. "wiederhole n mal" is not in the box:
+       * the variable counts the cells. cells: exactly this many moves. */
+      id: 9,
+      name: { de: 'Genau 5', en: 'Exactly 5' },
+      task: { de: 'Fahre genau 5 Felder und bleib auf dem Stern stehen \u2013 in allen drei Labyrinthen.',
+              en: 'Drive exactly 5 cells and stop on the star \u2013 in all three mazes.' },
+      hint: { de: 'Wiederhole, bis Schritte = 5: Wenn vorne frei ist, fahre und z\u00e4hle mit. Sonst drehe nach rechts.',
+              en: 'Repeat until Steps = 5: if the front is free, move and count. Otherwise turn right.' },
+      n: 3, walls: ['0,0,E', '0,1,E', '1,1,N', '1,1,E'],
+      start: { x: 0, y: 0, d: 'N' }, goal: { x: 2, y: 1 },
+      endOnStar: true, cells: 5,
+      allow: ['move', 'right', 'left', 'repeatUntil', 'ifElse', 'setVar', 'changeVar', 'showVar'], par: 6,
+      variants: [
+        { walls: ['0,1,N', '1,0,N', '2,1,N'], goal: { x: 1, y: 0 } },
+        { walls: ['0,1,E', '1,0,E', '1,2,E'], goal: { x: 1, y: 0 } },
+      ],
     },
   ];
 
-  root.RRData = { BLOCKS, CONDITIONS, TEXT, LEVELS };
+  root.RRData = { BLOCKS, CONDITIONS, OPS, NUM_MIN, NUM_MAX, TEXT, LEVELS };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -1,10 +1,11 @@
 # Modul 7 – Karten und Gedächtnis: Der Roboter merkt sich Wände
 
 **Woche 7 · Stunde 13 (+ Plus-Stunde P4) · ab 11 Jahren (Kern: 11–15) · Bogen F**
-**Software:** Unplugged-Teile und die Karte des Roboters (`GO`, Kartenausdruck) **verfügbar**
-– die Demo läuft heute über das Befehlsfeld der englischen Testseite `web/maze_event.html`.
-**Geplant – Stand November 2026:** Variablen, Listen und eigene Funktionen in RatRocket Code;
-eine deutsche Kartenansicht im Editor.
+**Software:** Unplugged-Teile, die Karte des Roboters (`GO`, Kartenausdruck) und **Variablen**
+in RatRocket Code (Aufgabe 8 „Zähl mit!", Aufgabe 9 „Genau 5") **verfügbar** – die `GO`-Demo
+läuft heute über das Befehlsfeld der englischen Testseite `web/maze_event.html`.
+**Geplant – Stand November 2026:** Listen und eigene Funktionen in RatRocket Code; eine
+deutsche Kartenansicht im Editor.
 
 In Woche 4 ist die rechte Hand an einem Stern auf der Insel gescheitert. Was fehlt ihr? Ein
 **Gedächtnis**. Die Kinder werden selbst zu Kartografen, sehen, wie der echte Roboter seine
@@ -22,7 +23,8 @@ Die SuS können …
 3. die Ausgabe des Roboters (Protokollzeilen und Kartenausdruck) lesen und mit der Wirklichkeit
    vergleichen,
 4. ein Verfahren mit Markierungen und Stapel (Tiefensuche) ausführen und beschreiben,
-5. (geplant) Variablen und Listen in einem Programm einsetzen, um etwas zu zählen oder sich zu merken.
+5. eine Variable in einem Programm einsetzen, um etwas zu zählen und eine Schleife zu steuern
+   (verfügbar); (geplant) Listen, um sich einen Weg zu merken.
 
 ## Stunde 13 – Der Roboter als Kartograf
 
@@ -80,9 +82,10 @@ MAP (N up, robot ^>v<, G goal, '.'/':' unseen):
 
 ## Plus-Stunde P4 – Merk dir das! (Brotkrumen, Stapel, Variablen)
 
-**Heute (verfügbar, unplugged):** Brotkrumen und Rückweg-Stapel.
+**Verfügbar:** Brotkrumen und Rückweg-Stapel (unplugged), Variablen in RatRocket Code
+(Aufgabe 8 und 9).
 **Material:** Boden-Raster 3 × 3 ohne Innenwände, ein Stern-Karte in der Mitte, 9 Spielsteine
-(Brotkrumen), Richtungskarten (N, O, S, W) als Stapel, Entdeckerheft.
+(Brotkrumen), Richtungskarten (N, O, S, W) als Stapel, Laptops, Entdeckerheft.
 
 Die Regeln (eine **Tiefensuche**):
 
@@ -97,27 +100,53 @@ Die Regeln (eine **Tiefensuche**):
 |---|---|---|
 | Einstieg | 5 | Insel-Labyrinth aus Woche 4 auf dem Boden; die rechte Hand scheitert – nochmal vorspielen. |
 | Erarbeitung I | 15 | Zwei Gruppen spielen die Regeln vor; die Klasse prüft Schritt für Schritt. Ergebnis: mit Brotkrumen wird der Stern gefunden (unten entlang, rechts hoch, oben zurück, links herunter, dann in die Mitte). |
-| Erarbeitung II | 15 | Papier-Variante mit größeren Labyrinthen (4 × 4); zählen: Wie oft wird zurückgegangen? |
-| Sicherung | 10 | Der Stapel ist eine **Liste**, bei der man nur oben etwas hinlegt und wegnimmt. Die Steine sind eine Karte „besucht ja/nein". Für den Roboter heißt das: Er braucht Speicher, den das Programm beschreiben und lesen kann – **Variablen** und **Listen**. |
+| Erarbeitung II | 15 | Der erste Zettel für den Roboter: **Aufgabe 8 „Zähl mit!"** – unter **Variablen** auf **Neue Variable**, Name `Schritte`; nach jedem `fahre 1 Feld` ein `ändere Schritte um 1`. Das Feld **Variablen** unter dem Labyrinth zeigt mit, was auf dem Zettel steht. Wer fertig ist: **Aufgabe 9 „Genau 5"** – genau 5 Felder in drei Labyrinthen, mit `wiederhole bis Schritte = 5`. |
+| Sicherung | 10 | Der Stapel ist eine **Liste**, bei der man nur oben etwas hinlegt und wegnimmt. Die Steine sind eine Karte „besucht ja/nein". Für den Roboter heißt das: Er braucht Speicher, den das Programm beschreiben und lesen kann. Einen Zettel – eine **Variable** – habt ihr eben benutzt; viele Zettel in einer Reihe, die **Liste**, kommt als Nächstes. |
 
 **Für Neugierige:** Der Knopf **Zufall** in Aufgabe 7 baut seine Labyrinthe mit genau diesem
 Verfahren – einem Stapel und „noch nicht besucht".
 
-**Geplant – Stand November 2026: dieselbe Stunde mit Bausteinen.** Ein Entwurf, wie es aussehen
-könnte (die Baustein-Namen sind Arbeitstitel, angelehnt an Scratch – sie gibt es noch nicht):
+**Verfügbar: Variablen in RatRocket Code.** Die orange Gruppe **Variablen** (in Aufgabe 7,
+8 und 9): `setze … auf …`, `ändere … um …` (auch um −1), `zeige …` (Sprechblase über dem
+Roboter) und Vergleiche `= > <` im `wenn` und im neuen `wiederhole bis …`. Jeder Lauf beginnt
+mit 0. Variablen leben im Browser – der echte Roboter bekommt davon nichts mit, er fährt nur.
 
 ```
-[Entwurf – diese Bausteine gibt es noch nicht]
+Aufgabe 8 „Zähl mit!" (6 Felder im U)        Aufgabe 9 „Genau 5" (drei Labyrinthe)
+wiederhole 3 mal                              wiederhole bis Schritte = 5
+    wiederhole 2 mal                              wenn vorne frei
+        fahre 1 Feld                                  fahre 1 Feld
+        ändere Schritte um 1                          ändere Schritte um 1
+    drehe nach rechts                             sonst
+                                                      drehe nach rechts
+```
+
+Aufgabe 8 gewinnt, wenn das Programm am Stern endet und eine Variable die gefahrenen Felder
+zählt; Aufgabe 9, wenn der Roboter nach genau 5 Feldern auf dem Stern steht. In Aufgabe 9
+fehlt `wiederhole … mal` absichtlich: Die drei Labyrinthe brauchen vor Feld 5 verschieden
+viele Drehungen, keine feste Rundenzahl passt für alle.
+
+Knobel: *Wer zählt?* Mia schreibt in Aufgabe 8 einfach `setze Schritte auf 6` ans Ende – und
+gewinnt. Zählt der Roboter oder Mia? Warum klappt der Trick in Aufgabe 9 nicht? *Warum nicht
+7 mal?* `wiederhole 7 mal` mit dem `wenn` darin schafft das erste Labyrinth von Aufgabe 9.
+Warum nicht das zweite?
+
+**Geplant – Stand November 2026: Listen.** Ein Entwurf, wie die Brotkrumen-Stunde mit
+Bausteinen aussehen könnte (die Listen-Bausteine sind Arbeitstitel, angelehnt an Scratch – sie
+gibt es noch nicht; `setze`, `ändere` und `zeige` gibt es schon):
+
+```
+[Entwurf – die Listen-Bausteine und „am Stern" gibt es noch nicht]
 setze Felder auf 0
 wiederhole, bis du am Stern bist
     … Rechte-Hand-Regel wie in Aufgabe 5 …
     nach jedem fahre 1 Feld: ändere Felder um 1
         und füge die Richtung zur Liste Weg hinzu
-sage Felder
+zeige Felder
 fahre die Liste Weg rückwärts ab        ← der Heimweg ohne Umwege in Sackgassen?
 ```
 
-Knobel dazu (sobald verfügbar): Der Roboter soll nach dem Stern auf dem **kürzesten
+Knobel dazu (sobald Listen verfügbar sind): Der Roboter soll nach dem Stern auf dem **kürzesten
 bekannten** Weg heimfahren. Warum reicht es nicht, die Liste einfach rückwärts abzufahren?
 (Sackgassen-Umwege sind mit drin – man muss sie herausstreichen.)
 
@@ -125,8 +154,10 @@ bekannten** Weg heimfahren. Warum reicht es nicht, die Liste einfach rückwärts
 
 - **Unterstützung:** Kartograf-Spiel mit 2 × 3 Feldern; Karopapier mit vorgedruckten
   Punkt-Linien; feste Rollen.
-- **Herausforderung:** Log-Detektiv; Vorhersage-Profi; Brotkrumen in 5 × 5 auf Papier mit
-  Zählung der Rückwege; Beweis, dass die Brotkrumen-Regel jedes erreichbare Feld findet.
+- **Herausforderung:** Log-Detektiv; Vorhersage-Profi; Brotkrumen in 4 × 4 und 5 × 5 auf
+  Papier mit Zählung der Rückwege; Beweis, dass die Brotkrumen-Regel jedes erreichbare Feld
+  findet; Aufgabe 9 mit 3 Sternen und die Knobelfragen *Wer zählt?* und *Warum nicht 7 mal?*;
+  in Aufgabe 7 ein Labyrinth, in dem ein Programm mit Variable mehr kann als eines ohne.
 
 ## Typische Fehler und Diagnosen
 
@@ -155,5 +186,7 @@ einer Karte, auf der nur die Außenwand bekannt ist; alles andere ist „noch ni
 jedem Feld trägt er ein, was seine drei Sensoren melden, und rechnet neu. Das Brotkrumen-Spiel
 ist die **Tiefensuche**: Markierungen (wo war ich?) und ein **Stapel** (wie komme ich zurück?).
 Beides sind Datenstrukturen – in Programmiersprachen heißen sie **Variable** und **Liste**.
-Weil RatRocket Code diese Bausteine noch nicht hat, bleibt der Bau mit Bausteinen geplant; das
-Denken dahinter ist heute vollständig unplugged lernbar.
+Variablen hat RatRocket Code (Aufgabe 8 und 9; eine Variable gehört zum Programm ihrer
+Aufgabe, wird mit ihm gespeichert und beginnt bei jedem Lauf mit 0). Listen noch nicht – der
+Bau der Tiefensuche mit Bausteinen bleibt deshalb geplant; das Denken dahinter ist heute
+vollständig unplugged lernbar.

@@ -16,13 +16,17 @@ where one exists.
 | `dreh dich um` | turn around | S | Eine halbe Drehung: danach schaut der Roboter zurück. |
 | `wiederhole … mal` | repeat … times | S | Alles im Bauch des Bausteins passiert so oft, wie die Zahl sagt (1 bis 9). |
 | `wiederhole, bis du draußen bist` | repeat until you are out | S | Der Bauch läuft immer wieder, bis der Roboter das Labyrinth verlassen hat. |
-| `wenn` … `sonst` | if … else | S | Der Roboter fragt seine Augen und macht dann das eine oder das andere. |
+| `wiederhole bis` … | repeat until … | S | Der Bauch läuft immer wieder, bis die Bedingung stimmt – geprüft vor jeder Runde. |
+| `wenn` … `sonst` | if … else | S | Der Roboter fragt seine Augen (oder eine Variable) und macht dann das eine oder das andere. |
 | `vorne frei` / `vorne Wand` | front is free / wall ahead | S | Ist vor dem Roboter in seinem Feld eine Wand oder nicht? |
 | `rechts frei` / `rechts Wand` | right is free / wall right | S | Dasselbe auf seiner rechten Seite. |
 | `links frei` / `links Wand` | left is free / wall left | S | Dasselbe auf seiner linken Seite. |
-| Fahren · Wiederholen · Entscheiden | Drive · Repeat · Decide | S | Die drei Farb-Gruppen der Bausteine. |
+| Fahren · Wiederholen · Entscheiden · Variablen | Drive · Repeat · Decide · Variables | S | Die vier Farb-Gruppen der Bausteine. |
 | Bauch | belly | S | Der Platz in einem Baustein, in den andere Bausteine kommen. |
-| Variable | variable | G | Ein Zettel mit Namen, auf dem sich das Programm eine Zahl merkt. |
+| Variable | variable | S | Ein Zettel mit Namen, auf dem sich das Programm eine Zahl merkt. Bei jedem Start steht 0 darauf. |
+| `setze` … `auf` … / `ändere` … `um` … | set … to … / change … by … | S | Schreibt eine Zahl auf den Zettel / zählt etwas dazu (mit −1 weg). |
+| `zeige` … | show … | S | Der Roboter zeigt in einer Sprechblase, was auf dem Zettel steht. |
+| `=` `>` `<` | = > < | S | gleich, größer als, kleiner als – so vergleicht man eine Variable mit einer Zahl. |
 | Liste | list | G | Viele Zettel in einer Reihe – zum Beispiel alle Richtungen, die der Roboter gefahren ist. |
 | eigene Funktion | own function | G | Ein selbst gebauter Baustein, der aus anderen Bausteinen besteht. |
 | parametrischer Baustein (`fahre … cm`, `drehe … Grad`) | parametric block | G | Ein Baustein mit Zahl, z. B. „fahre 30 cm" statt „fahre 1 Feld". |

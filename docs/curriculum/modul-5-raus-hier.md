@@ -31,10 +31,11 @@ Die SuS können …
 - **Größe:** Das Tisch-Labyrinth muss so groß sein wie am Bildschirm (der Roboter zählt seine
   Felder mit, um zu wissen, wann er draußen ist). Der Ausgang darf überall am Rand sein – aber
   nicht zur Tischkante hin.
-- **Aufgabe 6 nur in der Simulation.** Nach dem ersten geschafften Labyrinth startet die
-  Software nach knapp einer Sekunde automatisch das nächste – am echten Roboter würde er
-  dann draußen weiterfahren. Für den Roboter: **Aufgabe 5** wählen und das Tisch-Labyrinth
-  umbauen. Das Programm bleibt gleich, die Sensoren entscheiden.
+- **Aufgabe 6 am echten Roboter:** Mit **Echter Roboter** wartet die Software nach jedem
+  geschafften Labyrinth („Geschafft! 1/3. Bau das nächste Labyrinth auf und stell den
+  Roboter auf den Start.") – erst **Weiter** startet das nächste. Dazwischen das
+  Tisch-Labyrinth umbauen. (In der Simulation geht es nach knapp einer Sekunde von selbst
+  weiter.) Das Programm bleibt gleich, die Sensoren entscheiden.
 
 ## Stunde 7 – Die rechte Hand an der Wand
 
@@ -102,8 +103,8 @@ Entdeckerheft, Rekordtafel.
 | Phase | Min | Ablauf |
 |---|---|---|
 | Einstieg | 5 | Vorhersagen aus Stunde 7 vorlesen. Aufgabe 6 öffnen: drei Labyrinthe, ein Programm. |
-| Erarbeitung I | 12 | Aufgabe 6 (nur Simulation). Danach Aufgabe 7 ohne Stern (Stern anklicken = weg; „… nach draußen"), Knopf **Zufall** zehnmal: Schafft das Programm alle zehn? Strichliste ins Entdeckerheft. |
-| Erarbeitung II | 15 | Roboter-Station: **Aufgabe 5** gewählt, **Echter Roboter**. Die Teams bauen das Tisch-Labyrinth um (wie die Labyrinthe aus Aufgabe 6 oder frei; Start bleibt unten links, ein Ausgang am Rand), das Programm bleibt unverändert. |
+| Erarbeitung I | 12 | Aufgabe 6 in der Simulation. Danach Aufgabe 7 ohne Stern (Stern anklicken = weg; „… nach draußen"), Knopf **Zufall** zehnmal: Schafft das Programm alle zehn? Strichliste ins Entdeckerheft. |
+| Erarbeitung II | 15 | Roboter-Station: **Aufgabe 6** mit **Echter Roboter** – nach jedem Labyrinth auf **Weiter** warten lassen und das Tisch-Labyrinth wie das nächste am Bildschirm umbauen. Oder **Aufgabe 5** und frei umbauen (Start bleibt unten links, ein Ausgang am Rand). Das Programm bleibt unverändert. |
 | Sicherung | 13 | Unterrichtsgespräch „Warum klappt es überall?" (siehe *Für die Lehrkraft*). Dann der Gegenbeweis am Beamer: Aufgabe 7, 3 × 3, keine Wände, keine Öffnung, Stern in die **Mitte**. Die rechte Hand fährt immer außen herum, bis die Software abbricht: „Das Programm läuft zu lange. Fehlt eine Abbruchbedingung?" Cliffhanger für Woche 7: *Was müsste der Roboter können, um den Stern zu finden?* |
 
 Die beiden weiteren Labyrinthe aus Aufgabe 6 (zum Nachbauen am Tisch):

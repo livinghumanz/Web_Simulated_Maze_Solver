@@ -112,6 +112,16 @@
       <div class="verdict" id="verdict" hidden></div>
     </div>
 
+    <!-- the program's variables and their values, live (filled in by code.js) -->
+    <div class="watch" id="watch" hidden>
+      <div class="watch-row">
+        <span class="watch-title"><span id="t-watch">Variablen</span>
+          <button class="info" data-tip-key="i_watch" aria-label="Info">i</button></span>
+        <div class="watch-list" id="watchList"></div>
+      </div>
+      <div class="watch-log" id="watchLog" hidden></div>
+    </div>
+
     <div class="controls">
       <button class="btn btn-go" id="runBtn">Los!</button>
       <button class="btn" id="stepBtn">Schritt</button>

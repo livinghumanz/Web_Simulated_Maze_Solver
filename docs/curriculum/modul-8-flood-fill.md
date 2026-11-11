@@ -5,7 +5,8 @@
 (`GO`, `GOTO`) **verfügbar**; die Roboter-Demo läuft heute über die englische Testseite
 `web/maze_event.html`.
 **Geplant – Stand November 2026:** die Zahlenflut selbst bauen – mit Karten-Bausteinen oder
-Variablen, Listen und eigenen Funktionen, für Ältere als Textprogramm.
+Listen und eigenen Funktionen, für Ältere als Textprogramm. **Variablen** dafür sind schon
+**verfügbar** (Modul 7, Aufgabe 8 und 9).
 
 Wie findet ein Roboter den **kürzesten** Weg – auch zum Stern in der Mitte, an dem die rechte
 Hand scheitert? Mit einer Idee, die Kinder ohne Computer ausführen können: Man gießt
@@ -169,7 +170,8 @@ in jedem Feld aus dem, was er bisher gesehen hat.
 
 **Geplant – Stand November 2026.** Die Kinder sollen die Zahlenflut selbst programmieren und
 denselben Weg erst in der Simulation, dann auf dem Roboter fahren. Dafür fehlen in RatRocket
-Code noch Bausteine. Zwei Ausbaustufen sind denkbar (Namen sind Arbeitstitel):
+Code noch Bausteine (Variablen gibt es schon, Listen und eigene Funktionen noch nicht). Zwei
+Ausbaustufen sind denkbar (Namen sind Arbeitstitel):
 
 **Stufe 1 – Karten-Bausteine (ab etwa 11):** Die Software rechnet die Flut, die Kinder
 programmieren das Bergab-Fahren mit den bekannten `wenn`-Bausteinen.
@@ -187,11 +189,12 @@ wiederhole, bis du am Stern bist
             drehe nach links
 ```
 
-**Stufe 2 – Variablen, Listen, eigene Funktionen (ab etwa 13):** Die Kinder bauen die Flut
-selbst – mit einer Warteschlange (eine Liste, an die man hinten anfügt und vorne wegnimmt):
+**Stufe 2 – Variablen (verfügbar), Listen und eigene Funktionen (geplant) (ab etwa 13):** Die
+Kinder bauen die Flut selbst – mit einer Warteschlange (eine Liste, an die man hinten anfügt und
+vorne wegnimmt):
 
 ```
-[Entwurf – diese Bausteine gibt es noch nicht]
+[Entwurf – Listen, Feld-Zahlen und „für jede" gibt es noch nicht; setze/ändere schon]
 setze Zahl von jedem Feld auf leer
 setze Zahl von Ziel auf 0
 füge Ziel zur Liste Warteschlange hinzu
