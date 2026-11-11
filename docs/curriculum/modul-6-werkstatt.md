@@ -5,9 +5,12 @@
 `PWMFREQ`), PID-Test-Modus (`KP`, `KI`, `KD`, `FWD`, `TEL`), Kalibrierbefehle im
 Labyrinth-Modus (`CALDIST`, `TRACK`, `THR`). Heute bedient über das Befehlsfeld der
 englischen Testseite `web/maze_event.html`.
-**Geplant – Stand November 2026:** die Werkstatt in RatRocket Code (Kalibrier-Werkstätten
-Strecke, Drehung, PID, Gyro mit Reglern und Diagrammen), ein Motor-Panel mit Schieberegler
-und Live-Pulszähler, parametrische Bausteine (`fahre … cm`, `drehe … Grad`, Tempo).
+**Verfügbar – Stand November 2026:** die Werkstatt-Seite `web/werkstatt.html` mit drei Tabs:
+Motoren & Pulse (Schieberegler, Live-Pulszähler, Pulse-pro-Umdrehung-Experiment, Tastgrad-Kurve),
+PID-Regler (erst nach Gefühl, dann benannt, Live-Diagramm) und Kalibrieren (Strecke, Geradeaus,
+Drehung, Zentrierung, Speichern mit Lehrkraft-Freigabe). Die Seite prüft den DIP-Modus.
+**Geplant:** Gyro-Regelung der Drehungen (Gyro ist angeschlossen), parametrische Bausteine
+(`fahre … cm`, `drehe … Grad`, Tempo).
 
 Seit Woche 1 hängt die **Unterschiede-Wand**: alles, was der echte Roboter anders macht als
 die Simulation. Jetzt wird sie abgearbeitet. Die Kinder öffnen die „Motorhaube": Was ist eine
@@ -58,7 +61,8 @@ fuhr nur 262 mm. Mit dem Dreisatz: 2510 · 300 / 262 ≈ 2874 Pulse pro Umdrehun
 Rad von 34 mm Durchmesser (Umfang ≈ 106,8 mm) sind das etwa 26,9 Pulse pro Millimeter. Genau
 diese Rechnung macht der Befehl `CALDIST 300 262` im Labyrinth-Modus. **Heute** kalibriert die
 Lehrkraft so über das Befehlsfeld (am Lineal `FWD 300`, messen, `CALDIST 300 <gemessen>`,
-`SAVE`). **Geplant:** die Werkstatt „Strecke", in der die Kinder das selbst tun.
+`SAVE`). **Verfügbar:** die Werkstatt „Kalibrieren" (Schritt Strecke) führt die Kinder
+durch genau diese Messung.
 
 **Knobelaufgabe (wirklich schwer):**
 - *Rechnen:* Wie viele Pulse braucht der Roboter für ein Feld (160 mm)? *(≈ 4300.)* Wie viele

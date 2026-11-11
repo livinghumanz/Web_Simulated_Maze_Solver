@@ -42,7 +42,7 @@ Sensoren.
 | 2 | legen DIP-Schalter um, starten neu und erkennen den Modus | verfügbar (5 Modi, Start-Meldung, `DIP` live) | heute Testseite; deutsche Roboter-Info **geplant** |
 | 3 | stecken das Bluetooth-Modul selbst ein und steuern den Roboter fern | verfügbar (`FWD`, `TURN`, `STOP`, `SPD`) | verfügbar: Fernsteuerung `web/drive.html` (Steuerkreuz) |
 | 4 | messen Pulse pro Umdrehung, stellen PWM ein, ändern die Drehrichtung | verfügbar (Motor-Test: `PWM`, `JOG`, `SWEEP`, `ENC`) | heute Befehle tippen; Motor-Panel **geplant** |
-| 5 | stellen Regler erst nach Gefühl, dann mit P, I, D und Schwellen ein | verfügbar (PID-Test: `KP`, `KI`, `KD`, `TEL`; `THR`) | heute Befehle tippen; PID-Panel/Werkstatt **geplant** |
+| 5 | stellen Regler erst nach Gefühl, dann mit P, I, D und Schwellen ein | verfügbar (PID-Test: `KP`, `KI`, `KD`, `TEL`; `THR`) | verfügbar: Werkstatt-Seite `web/werkstatt.html`, Tab PID-Regler (erst nach Gefühl, dann benannt); Gyro-Regelung geplant |
 | 6 | erfinden ein Spielzeug für andere und zeigen es auf einer Mini-Messe | verfügbar, was Fahren und Sensoren angeht | heute Aufgabe 7; freies Baufenster **geplant** |
 
 ## Modulkarte
@@ -54,7 +54,7 @@ Sensoren.
 | 3 | [Schleifen und Vorausdenken](modul-3-schleifen.md) | B · 1 | 8–13 | 1 (+P1) | 3 | verfügbar |
 | 4 | [Sensoren und Entscheidungen](modul-4-sensoren.md) | C · 1 | 9–14 | 1 (+P2) | 3 | verfügbar |
 | 5 | [Raus hier! Wandfolger und Turnierwoche](modul-5-raus-hier.md) | D · 1 | 10–14 | 4 | 4–5 | verfügbar |
-| 6 | [Werkstatt: Motoren, Messen, Regeln](modul-6-werkstatt.md) | E · 4 · 5 | 11–16 | 2 (+P3) | 6 | Roboter verfügbar; Werkstatt, Panels, parametrische Bausteine, Gyro geplant |
+| 6 | [Werkstatt: Motoren, Messen, Regeln](modul-6-werkstatt.md) | E · 4 · 5 | 11–16 | 2 (+P3) | 6 | Roboter verfügbar; Werkstatt-Seite (Motoren & Pulse, PID, Kalibrieren) verfügbar; parametrische Bausteine, Gyro-Regelung geplant |
 | 7 | [Karten und Gedächtnis](modul-7-karten-und-gedaechtnis.md) | F | 11–15 | 1 (+P4) | 7 | Unplugged, Roboter-Karte, Variablen (Aufgabe 8, 9), Listen, eigene Bausteine und Karten-Bausteine (Aufgabe 7) verfügbar |
 | 8 | [Flood-Fill: der kürzeste Weg](modul-8-flood-fill.md) | G | 11–18 | 2 (+P5–P7) | 7–8 (+9–10) | Unplugged, `GO`/`GOTO` und die Flut selbst bauen (Karten-Bausteine, Aufgabe 7) verfügbar |
 | 9 | [Dein eigenes Spielzeug](modul-9-eigenes-spielzeug.md) | 6 | 10–16 | 1 (+P8–P9) | 8 (+11) | heute mit Aufgabe 7; freies Baufenster, Programme auf dem Roboter geplant |
@@ -149,8 +149,8 @@ unbekannte Labyrinthe an.
 ## Kennzeichnung und Software-Stand
 
 - **verfügbar** – heute im Repository vorhanden und erprobt.
-- **geplant – Stand November 2026** – noch nicht gebaut: Werkstatt (Kalibrier-Werkstätten
-  Strecke, Drehung, PID, Gyro), parametrische Bausteine (cm, Grad, Tempo),
+- **geplant – Stand November 2026** – noch nicht gebaut: Gyro-Regelung der Drehungen
+  (Gyro ist angeschlossen), parametrische Bausteine (cm, Grad, Tempo),
   Textprogrammierung, Programme auf dem Roboter, freies Baufenster, Motor- und
   PID-Panel, deutsche Roboter-Info. (Variablen, Listen, eigene Bausteine, Karten-Bausteine und
   die Fernsteuerung sind inzwischen **verfügbar**.)
