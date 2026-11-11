@@ -234,6 +234,7 @@ nominal pitch; the next wall it sees corrects the error.
 | Single moves | `FWD <mm> [v]`, `TURN <deg> [v]` (spin, + = clockwise), `PIVOT <deg> [v]`, `CELL`, `STOP` |
 | Escape | `ESCAPE`, `ENTRY <n>`, `BTN ESCAPE\|GO` (what the PB2 button starts) |
 | Push game | `PUSH` (motors off, push the robot by hand; encoders track it; `STOP` ends) |
+| IMU | `IMU` (scan header H2 over software I2C, WHO_AM_I, 5 raw accel/gyro samples) |
 | Maze | `GO`, `GOTO <x> <y>`, `POSE <x> <y> <N\|E\|S\|W>`, `RESETMAP`, `MAP`, `WHERE`, `MAZEDEF <n> <hex>`, `WALLSREP` |
 | Settings | `SIZE`, `GOAL`, `PITCH`, `TRACK`, `VRUN`, `VTURN`, `KC <p> <d>`, `HOME 0\|1`, `ALIGN 0\|1`, `SENSE 0\|1`, `WALLUPD 0\|1`, `PIVOTS 0\|1`, `CFG` |
 | Keep settings | `SAVE` (to MCU flash, survives power-off; robot freezes ~2 s), `LOAD`, `DEFAULTS` (also erases the saved copy) |

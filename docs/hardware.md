@@ -109,6 +109,14 @@ measure it yourself and see which method you trust.
 | H1 (BT, 1x6) | +5V_2, GND, BT_TX → UART_6_RX (PC7), BT_RX → UART_6_TX (PC6). KEY/STATE not wired, so AT mode needs the button on the HC-05. |
 | H4 (ESP-01, 2x4) | Shares UART6 with the BT module — fit only one of them. |
 | H2 (IMU, 1x10) | PC10 SCK/SCL, PC12 MOSI/SDA, PC11 MISO, PD2 CS, PC4 INT, PC5 FSYNC. Vendor code uses software I2C on PC10/PC12 for the MPU6050. |
+
+**IMU bring-up (2026-11-11):** an MPU6050 module on H2 answers at 0x68
+(WHO_AM_I 0x68) over the vendor's software I2C (`sw_i2c.c`, `mpu6050_sw.c`,
+probe in `imu.c`, console command `IMU`). First readings at rest: acc Z
+~14200-14300 (nominal 16384 for 1 g: slight tilt or scale offset), gyro
+zero-rate offsets about -560 / -1150 / -240 raw (= -4 / -9 / -2 deg/s) -
+large but typical for clones; a bias calibration at rest is needed before
+the gyro steers turns. The first sample after wake-up reads all zeros.
 | H3 (interface board, 2 mm 1x10) | +5V_2, GND, S1 = PB8 (I2C1 SCL), S2 = PB9 (I2C1 SDA), A0–A4 = PA1–PA5, G1 = PB10 |
 | J1 | SWD (SWDIO PA13, SWCLK PA14) |
 | J2 | UART1 (PA9 TX, PA10 RX) — FTDI on COM7 |

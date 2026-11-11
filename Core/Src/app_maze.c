@@ -19,6 +19,7 @@
 #include "motor.h"
 #include "settings.h"
 #include "dfu.h"
+#include "imu.h"
 #include "ultrasonic.h"
 
 #define LOOP_MS          10U
@@ -164,6 +165,7 @@ static void print_help(void)
     BT_LOG(" Moves   : FWD <mm> [v] | TURN <deg> [v] (spin, + = right) | PIVOT <deg> [v] | CELL | STOP");
     BT_LOG(" Escape  : ESCAPE (start outside the entry, right-hand wall following) | BTN ESCAPE|GO");
     BT_LOG(" Push    : PUSH (motors off, push the robot by hand; tracked by the encoders) | STOP");
+    BT_LOG(" IMU     : IMU (scan header H2, WHO_AM_I, raw accel/gyro samples)");
     BT_LOG("           ENTRY n (entry cell along its side, from the robot's left: 0 = corner)");
     BT_LOG(" Maze    : GO | GOTO <x> <y> | POSE <x> <y> <N|E|S|W> | RESETMAP | MAP | WHERE");
     BT_LOG("           MAZEDEF <n> <hex> (load drawn maze) | WALLSREP");
@@ -425,6 +427,8 @@ static void handle_command(char *line)
     } else if (strcmp(cmd, "ESCAPE") == 0) {
         Maze_SetAbortCheck(abort_check);
         (void)Maze_Escape();
+    } else if (strcmp(cmd, "IMU") == 0) {
+        Imu_Probe();
     } else if (strcmp(cmd, "PUSH") == 0) {
         Maze_SetAbortCheck(abort_check);
         (void)Maze_Push();
