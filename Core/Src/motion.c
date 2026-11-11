@@ -8,6 +8,7 @@
 #include "cmsis_os.h"
 #include "battery.h"
 #include "encoder.h"
+#include "imu.h"
 #include "motor.h"
 
 #define LOOP_HZ          1000.0f
@@ -157,6 +158,183 @@ static void push_sample(uint8_t event, int32_t pl, int32_t pr)
     (void)osMessageQueuePut(s_tel_q, &s, 0, 0);   /* never wait */
 }
 
+/* ---------------- gyro-closed turns (2026-11-11) ----------------
+ * TURN with GYROTURN 1 and a calibrated IMU: the encoder trapezoid still
+ * drives the whole commanded angle (smooth, already tuned). Once the robot is
+ * at rest the gyro-measured angle is compared with the command; if it is off
+ * by more than GT_TOL_DEG a correction spin (again an encoder trapezoid,
+ * continuing from the held wheel targets) is added, and so on:
+ *     at rest -> measure -> |error| <= tol ? done : spin GAIN * error (* k) -> ...
+ * k = encoder degrees per gyro degree in the main spin (wheel slip, track
+ * width error); it scales the first correction only - the slower corrections
+ * slip less than the main spin, and carrying k on over-corrected on the bench.
+ * GAIN < 1 because on the bench (USB cable, light robot) a correction moved
+ * the robot up to 2x the commanded angle: damped steps converge from one side
+ * instead of alternating. Measuring only at rest makes
+ * the gyro filter delay irrelevant; the phase is bounded by GT_MAX_CORR spins
+ * and a time-out. If the gyro grossly disagrees with the encoders after the
+ * main spin (wrong sign or axis, loose module) nothing is corrected. Pivots,
+ * FWD and SPD never come here; with GYROTURN 0 or no calibrated IMU a turn
+ * ends exactly as before (SETTLE_MS hold). */
+#define GT_TOL_DEG          0.5f    /* done when |gyro error| <= this                */
+#define GT_MAX_CORR         MOTION_GT_MAX_CORR   /* correction spins per turn (4) */
+#define GT_GAIN             0.8f    /* fraction of the error corrected per spin      */
+#define GT_PHASE_BASE_MS    2000U   /* correction phase time-out: base ...           */
+#define GT_PHASE_MS_PER_DEG 5.0f    /*   ... + this per commanded degree             */
+#define GT_SETTLE_MIN_MS    120U    /* after a spin hold at least this long, then    */
+#define GT_STILL_MS         60U     /*   until the gyro read < GT_REST_DPS this long */
+#define GT_SETTLE_MAX_MS    500U    /*   (or measure anyway after this)              */
+#define GT_REST_DPS         2.0f
+#define GT_RATIO_MIN        0.5f    /* main spin: gyro/command outside this range or */
+#define GT_RATIO_MAX        1.5f    /*   the wrong sign: gyro not trusted (slip on   */
+#define GT_SMALL_DEG        10.0f   /*   the bench reached 33 %); below 10 deg:      */
+#define GT_SMALL_ERR_DEG    5.0f    /*   |error| > 5 deg instead                     */
+#define GT_K_MIN            0.70f   /* k limits (bench: main-spin slip up to 35 %)  */
+#define GT_K_MAX            1.30f
+
+typedef struct {
+    bool active;          /* the current move is a TURN: report it at the end  */
+    bool gyro;            /* IMU present and calibrated at the start           */
+    bool closing;         /* correcting on the gyro (GYROTURN on)              */
+    bool measured;        /* main spin evaluated                               */
+    float cmd, v, a;      /* command                                           */
+    float h0;             /* gyro heading at the start                         */
+    float k;              /* encoder deg per gyro deg                          */
+    int32_t pl0, pr0;     /* wheel positions at the start                      */
+    uint32_t t_phase;     /* s_t when the correction phase began               */
+    uint16_t still_ms;
+    uint8_t ncorr;
+    uint8_t result;       /* MotionGyroResult                                  */
+    float meas[GT_MAX_CORR];   /* gyro angle before each correction            */
+} GyroTurn;
+
+static GyroTurn s_gt;
+/* GYROTURN setting. Default OFF (2026-11-11): gyro calibration and gyro-closed
+ * turns are postponed until the gyro scale has been checked on the floor; off,
+ * every turn is the unchanged encoder turn. */
+static volatile bool s_gyro_turn_on = false;
+static MotionTurnReport s_turn_rep;
+static bool s_turn_rep_valid;
+
+static float enc_turn_deg(int32_t pl, int32_t pr)
+{
+    float dl = (float)(pl - s_gt.pl0) / s_l.cpm;
+    float dr = (float)(pr - s_gt.pr0) / s_r.cpm;
+    return (dl - dr) / s_track_mm * (180.0f / PI_F);
+}
+
+static void gyro_turn_begin(const MotionCmd *c, int32_t pl, int32_t pr)
+{
+    memset(&s_gt, 0, sizeof(s_gt));
+    s_gt.active = true;
+    s_gt.cmd = c->p1;
+    s_gt.v = c->p2;
+    s_gt.a = c->p3;
+    s_gt.k = 1.0f;
+    s_gt.pl0 = pl;
+    s_gt.pr0 = pr;
+    s_gt.gyro = Imu_Present() && Imu_Calibrated();
+    s_gt.closing = s_gt.gyro && s_gyro_turn_on;
+    s_gt.h0 = s_gt.gyro ? Imu_HeadingDeg() : 0.0f;
+    s_gt.result = s_gt.closing ? MOTION_GT_OK : MOTION_GT_ENCODER;
+}
+
+/* One more spin of deg (encoder degrees), continuing from the held targets. */
+static void start_correction(float deg)
+{
+    float sgn = (deg >= 0.0f) ? 1.0f : -1.0f;
+    s_l.start = s_l.tgt;
+    s_r.start = s_r.tgt;
+    s_l.sgn = sgn;
+    s_r.sgn = -sgn;
+    s_dist_total = PI_F * s_track_mm * fabsf(deg) / 360.0f;
+    s_dist_done = 0.0f;
+    s_prof_v = 0.0f;
+    s_vmax = s_gt.v;            /* small corrections stay slow: triangle profile */
+    s_accel = s_gt.a;
+    s_steer_off = 0.0f;
+    s_gt.still_ms = 0;
+    s_gt.ncorr++;
+    s_state = ST_TURN;
+}
+
+/* Called every tick in ST_SETTLE; true = the move is finished. */
+static bool settle_done(int32_t pl, int32_t pr)
+{
+    uint32_t t = s_t - s_settle_t;
+    if (!s_gt.active || !s_gt.closing) {
+        return t >= SETTLE_MS;                       /* unchanged encoder behaviour */
+    }
+    if (!Imu_Present()) {
+        s_gt.closing = false;
+        s_gt.result = MOTION_GT_LOST;
+        return t >= SETTLE_MS;
+    }
+    s_gt.still_ms = (fabsf(Imu_RateDps()) < GT_REST_DPS) ? (uint16_t)(s_gt.still_ms + 1U) : 0U;
+    if (t < GT_SETTLE_MIN_MS || (s_gt.still_ms < GT_STILL_MS && t < GT_SETTLE_MAX_MS)) {
+        return false;                                /* not at rest yet */
+    }
+    float turned = Imu_HeadingDeg() - s_gt.h0;
+    float err = s_gt.cmd - turned;
+    if (!s_gt.measured) {                            /* the main spin has ended */
+        s_gt.measured = true;
+        s_gt.t_phase = s_t;
+        bool trusted;
+        if (fabsf(s_gt.cmd) >= GT_SMALL_DEG) {
+            float ratio = turned / s_gt.cmd;         /* negative: wrong sign */
+            trusted = (ratio >= GT_RATIO_MIN && ratio <= GT_RATIO_MAX);
+        } else {
+            trusted = (fabsf(err) <= GT_SMALL_ERR_DEG);
+        }
+        if (!trusted) {
+            s_gt.closing = false;
+            s_gt.result = MOTION_GT_DISAGREE;
+            return t >= SETTLE_MS;
+        }
+        if (fabsf(turned) >= GT_SMALL_DEG) {
+            s_gt.k = clampf(enc_turn_deg(pl, pr) / turned, GT_K_MIN, GT_K_MAX);
+        }
+    }
+    if (fabsf(err) <= GT_TOL_DEG) {
+        s_gt.result = MOTION_GT_OK;
+        return true;
+    }
+    uint32_t phase_ms = GT_PHASE_BASE_MS + (uint32_t)(GT_PHASE_MS_PER_DEG * fabsf(s_gt.cmd));
+    if (s_gt.ncorr >= GT_MAX_CORR || s_t - s_gt.t_phase >= phase_ms ||
+        !Motion_CanTurn(err > 0.0f)) {
+        s_gt.result = MOTION_GT_LIMIT;
+        return true;
+    }
+    s_gt.meas[s_gt.ncorr] = turned;
+    start_correction(GT_GAIN * err * ((s_gt.ncorr == 0U) ? s_gt.k : 1.0f));
+    return false;
+}
+
+static void gyro_turn_report(uint8_t event, int32_t pl, int32_t pr)
+{
+    MotionTurnReport r;
+    memset(&r, 0, sizeof(r));
+    r.cmd_deg = s_gt.cmd;
+    r.enc_deg = enc_turn_deg(pl, pr);
+    r.gyro_valid = s_gt.gyro && Imu_Present();
+    if (r.gyro_valid) {
+        r.heading_deg = Imu_HeadingDeg();
+        r.gyro_deg = r.heading_deg - s_gt.h0;
+    }
+    r.ms = s_t;
+    r.event = event;
+    r.result = (event == MOTION_EV_DONE) ? s_gt.result : MOTION_GT_ABORTED;
+    r.corrections = s_gt.ncorr;
+    for (uint32_t i = 0; i < GT_MAX_CORR; i++) {
+        r.meas[i] = s_gt.meas[i];
+    }
+    taskENTER_CRITICAL();
+    s_turn_rep = r;
+    s_turn_rep_valid = true;
+    taskEXIT_CRITICAL();
+    s_gt.active = false;
+}
+
 static void go_idle(uint8_t event, int32_t pl, int32_t pr)
 {
     Motor_Coast();
@@ -164,11 +342,15 @@ static void go_idle(uint8_t event, int32_t pl, int32_t pr)
     push_sample(event, pl, pr);
     s_state = ST_IDLE;
     s_last_event = event;
+    if (s_gt.active) {
+        gyro_turn_report(event, pl, pr);   /* before s_busy: TURN reads it next */
+    }
     s_busy = false;
 }
 
 static void start_move(State st, int32_t pl, int32_t pr)
 {
+    s_gt.active = false;                   /* set again by CMD_TURN only */
     wheel_reset(&s_l, pl);
     wheel_reset(&s_r, pr);
     s_steer = 0.0f;
@@ -210,6 +392,7 @@ static void handle_cmd(const MotionCmd *c, int32_t pl, int32_t pr)
         float sgn = (c->p1 >= 0.0f) ? 1.0f : -1.0f;
         float arc = PI_F * s_track_mm * fabsf(c->p1) / 360.0f;
         start_profile(ST_TURN, arc, sgn, -sgn, c->p2, c->p3, pl, pr);
+        gyro_turn_begin(c, pl, pr);        /* gyro-closed turns (2026-11-11) */
         break;
     }
     case CMD_PIVOT: {
@@ -350,7 +533,7 @@ static void motion_task(void *arg)
 
             if (fabsf(s_l.err) > FOLLOW_ERR_MAX || fabsf(s_r.err) > FOLLOW_ERR_MAX) {
                 go_idle(MOTION_EV_FOLLOW_ERR, pl, pr);
-            } else if (s_state == ST_SETTLE && s_t - s_settle_t >= SETTLE_MS) {
+            } else if (s_state == ST_SETTLE && settle_done(pl, pr)) {   /* SETTLE_MS, or gyro check */
                 go_idle(MOTION_EV_DONE, pl, pr);
             } else if (s_tel_period != 0U && (s_t % s_tel_period) == 0U) {
                 push_sample(MOTION_EV_SAMPLE, pl, pr);
@@ -461,6 +644,45 @@ bool Motion_Turn(float deg, float v_wheel_mm_s, float accel_mm_s2)
     }
     MotionCmd c = { .type = CMD_TURN, .p1 = deg, .p2 = v_wheel_mm_s, .p3 = accel_mm_s2 };
     return send_cmd(&c);
+}
+
+void Motion_SetGyroTurn(bool on)
+{
+    s_gyro_turn_on = on;        /* read at the start of each turn */
+}
+
+bool Motion_GetGyroTurn(void)
+{
+    return s_gyro_turn_on;
+}
+
+bool Motion_GyroTurnActive(void)
+{
+    return s_gyro_turn_on && Imu_Present() && Imu_Calibrated();
+}
+
+bool Motion_GetTurnReport(MotionTurnReport *r)
+{
+    taskENTER_CRITICAL();
+    bool valid = s_turn_rep_valid;
+    if (valid) {
+        *r = s_turn_rep;
+    }
+    taskEXIT_CRITICAL();
+    return valid;
+}
+
+const char *Motion_GyroResultName(uint8_t result)
+{
+    switch (result) {
+    case MOTION_GT_ENCODER:  return "encoder turn";
+    case MOTION_GT_OK:       return "gyro ok";
+    case MOTION_GT_LIMIT:    return "gyro limit";
+    case MOTION_GT_DISAGREE: return "gyro disagrees, not corrected";
+    case MOTION_GT_LOST:     return "gyro lost";
+    case MOTION_GT_ABORTED:  return "aborted";
+    default:                 return "?";
+    }
 }
 
 bool Motion_Pivot(float deg, float v_wheel_mm_s, float accel_mm_s2)

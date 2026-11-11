@@ -34,3 +34,39 @@ uint8_t MPU6050_ReadAll(MPU6050_t *dev, MPU6050_Data_t *data)
 
     return 1;
 }
+
+/* ---- RatRocket additions (2026-11-11) ----
+ * The vendor init above only wakes the chip, which leaves the power-on
+ * defaults: internal 8 MHz oscillator, no low-pass filter (gyro bandwidth
+ * 256 Hz, output rate 8 kHz) and +-250 deg/s. For gyro-closed turns we need
+ * the PLL clock (more stable), a DLPF as anti-alias filter for the 200 Hz
+ * polling and more full-scale headroom. */
+uint8_t MPU6050_Configure(MPU6050_t *dev, uint8_t clksel, uint8_t dlpf_cfg,
+                          uint8_t gyro_fs, uint8_t accel_fs, uint8_t smplrt_div)
+{
+    if (!dev || !dev->bus) return 0;
+
+    const uint8_t gyro_cfg  = (uint8_t)((gyro_fs & 3U) << 3);
+    const uint8_t accel_cfg = (uint8_t)((accel_fs & 3U) << 3);
+    const uint8_t cfg       = (uint8_t)(dlpf_cfg & 7U);
+
+    if (!SWI2C_WriteReg(dev->bus, dev->addr7, MPU6050_PWR_MGMT_1, (uint8_t)(clksel & 7U))) return 0;
+    if (!SWI2C_WriteReg(dev->bus, dev->addr7, MPU6050_SMPLRT_DIV, smplrt_div)) return 0;
+    if (!SWI2C_WriteReg(dev->bus, dev->addr7, MPU6050_CONFIG, cfg)) return 0;
+    if (!SWI2C_WriteReg(dev->bus, dev->addr7, MPU6050_GYRO_CONFIG, gyro_cfg)) return 0;
+    if (!SWI2C_WriteReg(dev->bus, dev->addr7, MPU6050_ACCEL_CONFIG, accel_cfg)) return 0;
+
+    uint8_t back[3] = {0};   /* CONFIG, GYRO_CONFIG, ACCEL_CONFIG are consecutive */
+    if (!SWI2C_ReadRegs(dev->bus, dev->addr7, MPU6050_CONFIG, back, 3)) return 0;
+    return ((back[0] & 7U) == cfg && (back[1] & 0x18U) == gyro_cfg && (back[2] & 0x18U) == accel_cfg) ? 1 : 0;
+}
+
+uint8_t MPU6050_ReadGyroZ(MPU6050_t *dev, int16_t *gyro_z)
+{
+    if (!dev || !gyro_z) return 0;
+
+    uint8_t raw[2] = {0};
+    if (!SWI2C_ReadRegs(dev->bus, dev->addr7, MPU6050_GYRO_ZOUT_H, raw, 2)) return 0;
+    *gyro_z = (int16_t)((raw[0] << 8) | raw[1]);
+    return 1;
+}

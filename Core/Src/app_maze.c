@@ -153,6 +153,37 @@ static void print_cfg(void)
     BT_LOG("     centring KC p=%s d=%s max %s mm/s  sense %u  wallupd %u  pivots %u",
            f2(c->kc_p).s, f2(c->kc_d).s, f2(c->steer_max).s, c->sense, c->wall_update,
            c->pivot_turns);
+    float bias = 0.0f, saved = 0.0f;
+    ImuBiasSource src = Imu_GetBias(&bias);
+    bool saved_ok = Imu_GetSavedBias(&saved);
+    BT_LOG("     imu %s  gyro bias %s deg/s (%s; saved %s)  gyroturn %u (%s)",
+           Imu_StateName(Imu_GetState()), (src != IMU_BIAS_NONE) ? f2(bias).s : "-",
+           Imu_BiasSourceName(src), saved_ok ? f2(saved).s : "none", Motion_GetGyroTurn(),
+           Motion_GyroTurnActive() ? "gyro-closed turns" : "encoder turns");
+}
+
+/* "TURN done ..." keeps its prefix (the website waits for /^TURN (done|rejected)/);
+ * the rest shows commanded vs gyro-measured vs encoder angle in one line. */
+static void print_turn_done(void)
+{
+    MotionTurnReport r;
+    if (!Motion_GetTurnReport(&r)) {
+        BT_LOG("TURN done (event %u)", Motion_LastEvent());
+        return;
+    }
+    char steps[48] = "";
+    size_t n = 0;
+    for (uint8_t i = 0; i < r.corrections && i < MOTION_GT_MAX_CORR; i++) {
+        n += (size_t)snprintf(steps + n, sizeof(steps) - n, "%s%s", i ? " " : " (", f2(r.meas[i]).s);
+        if (n >= sizeof(steps)) break;
+    }
+    if (r.corrections > 0U && n + 2U < sizeof(steps)) {
+        strcat(steps, ")");
+    }
+    BT_LOG("TURN done (event %u) cmd %s gyro %s enc %s | %s, corr %u%s, %s s, hdg %s",
+           Motion_LastEvent(), f2(r.cmd_deg).s, r.gyro_valid ? f2(r.gyro_deg).s : "n/a",
+           f2(r.enc_deg).s, Motion_GyroResultName(r.result), r.corrections, steps,
+           f2((float)r.ms / 1000.0f).s, r.gyro_valid ? f2(r.heading_deg).s : "n/a");
 }
 
 static void print_help(void)
@@ -165,7 +196,8 @@ static void print_help(void)
     BT_LOG(" Moves   : FWD <mm> [v] | TURN <deg> [v] (spin, + = right) | PIVOT <deg> [v] | CELL | STOP");
     BT_LOG(" Escape  : ESCAPE (start outside the entry, right-hand wall following) | BTN ESCAPE|GO");
     BT_LOG(" Push    : PUSH (motors off, push the robot by hand; tracked by the encoders) | STOP");
-    BT_LOG(" IMU     : IMU (scan header H2, WHO_AM_I, raw accel/gyro samples)");
+    BT_LOG(" IMU     : IMU (status, raw accel/gyro) | GYRO (heading/rate 2 s) | GYROCAL (bias, keep still)");
+    BT_LOG("           GYROTURN 0|1 (1 = turns end on the gyro angle; default 0, experimental; SAVE keeps it)");
     BT_LOG("           ENTRY n (entry cell along its side, from the robot's left: 0 = corner)");
     BT_LOG(" Maze    : GO | GOTO <x> <y> | POSE <x> <y> <N|E|S|W> | RESETMAP | MAP | WHERE");
     BT_LOG("           MAZEDEF <n> <hex> (load drawn maze) | WALLSREP");
@@ -384,7 +416,7 @@ static void handle_command(char *line)
             BT_LOG("TURN rejected (left turns need the left reverse fix: use TURN 270)");
         } else {
             wait_idle();
-            BT_LOG("TURN done (event %u)", Motion_LastEvent());
+            print_turn_done();
         }
     } else if (strcmp(cmd, "PIVOT") == 0) {
         v2 = c->v_turn;
@@ -415,6 +447,7 @@ static void handle_command(char *line)
         Motion_SetTrackWidth(MOTION_TRACK_MM_DEFAULT);
         (void)Motion_SetDistanceScale(1.0f);
         (void)Motion_SetTrim(0.0f);
+        Motion_SetGyroTurn(false);         /* gyro turns postponed: default off */
         s_button_escape = true;
         BT_LOG("Defaults restored; saved settings %s", Settings_Erase() ? "erased" : "NOT erased");
         print_cfg();
@@ -429,6 +462,19 @@ static void handle_command(char *line)
         (void)Maze_Escape();
     } else if (strcmp(cmd, "IMU") == 0) {
         Imu_Probe();
+    } else if (strcmp(cmd, "GYRO") == 0) {
+        Imu_CmdGyro();
+    } else if (strcmp(cmd, "GYROCAL") == 0) {
+        Imu_CmdGyroCal();
+    } else if (strcmp(cmd, "GYROTURN") == 0) {
+        if (parse_f(a1, &v1)) {
+            Motion_SetGyroTurn(v1 != 0.0f);
+        } else if (a1 != NULL) {
+            BT_LOG("usage: GYROTURN 0|1");
+        }
+        BT_LOG("GYROTURN %u: TURN, spins and U-turns end on the %s angle%s", Motion_GetGyroTurn(),
+               Motion_GyroTurnActive() ? "gyro" : "encoder",
+               (Motion_GetGyroTurn() && !Motion_GyroTurnActive()) ? " (IMU not present or not calibrated)" : "");
     } else if (strcmp(cmd, "PUSH") == 0) {
         Maze_SetAbortCheck(abort_check);
         (void)Maze_Push();
@@ -546,10 +592,11 @@ void MazeApp_Run(uint8_t dip)
     BT_Log_SetMirrorUart1(true);   /* nothing else uses USART1 TX in this mode */
     Maze_DefaultConfig(&g_maze_cfg);
     Motion_Start();
-    bool loaded = Settings_Load(&s_button_escape);
+    bool loaded = Settings_Load(&s_button_escape);   /* also hands the saved gyro bias to imu.c */
     Motion_SetTelemetryPeriod(0);  /* events only */
     osThreadNew(motion_event_task, NULL, &s_ev_attr);
     Ultrasonic_Start();
+    Imu_Start();                   /* own task: sensor set-up + 1 s bias calibration run in the background */
     Maze_ResetMap();
     (void)Maze_SetPose(0, 0, NORTH);
 

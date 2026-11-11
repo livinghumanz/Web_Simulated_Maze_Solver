@@ -117,6 +117,34 @@ probe in `imu.c`, console command `IMU`). First readings at rest: acc Z
 zero-rate offsets about -560 / -1150 / -240 raw (= -4 / -9 / -2 deg/s) -
 large but typical for clones; a bias calibration at rest is needed before
 the gyro steers turns. The first sample after wake-up reads all zeros.
+
+**Gyro (2026-11-11, measured):** configured for ±500 °/s (65.5 LSB per
+°/s), DLPF 42 Hz, PLL clock (`imu.c`, see [firmware.md](firmware.md#gyro-and-gyro-closed-turns-2026-11-11)).
+The gyro measures every turn; gyro-closed turns exist but are off by default
+(`GYROTURN 0`) until the scale check below is done.
+- **Yaw axis = gyro Z, Z axis up** (acc Z ≈ +14200 at rest). Clockwise seen
+  from above (TURN +) reads **negative** raw Z; the firmware flips it so its
+  heading is clockwise-positive. Verified: `TURN 90` → gyro +90.48°.
+- Bias Z −1.71…−1.73 °/s (raw −112…−114 at ±500), the same within 0.02 °/s
+  over five boots and a `GYROCAL` in one afternoon; noise 0.032-0.043 °/s rms
+  with the 42 Hz filter. Heading drift at rest after calibration: ≤ 0.02° in
+  2 s.
+- Bus: the module answers reliably with the vendor delay loop at 4 instead of
+  40: gyro Z read 0.58 ms, full 14-byte read 1.8 ms; 0 read errors in
+  >50 000 samples, also while the motors run.
+- **USB-C cable on the bench:** the short cable drags and twists. In
+  encoder-only spins the robot turned up to 22 % less than the wheels
+  (TURN 360: gyro 283°, encoders 361°), and with the motors coasting the
+  twisted cable turned it back by up to 30° while idle. On USB power with
+  the cable the main spin of a gyro turn slipped 0-35 %. Test turns on
+  battery power without the cable for representative slip numbers.
+- **Not verified:** the gyro's absolute scale (datasheet sensitivity
+  tolerance ±3 %). Against the encoders the cleanest turns agree to
+  gyro/encoder 0.987-1.008, i.e. the scale is within about −1.3 … +0.8 % of
+  the encoder calibration, but no slip-free reference was available. Check:
+  on battery on the floor, `GYROTURN 0`, `TURN 360` (encoder turns ended
+  within 1-2° there on 2026-11-07) and compare the `gyro` value in the reply
+  with 360.
 | H3 (interface board, 2 mm 1x10) | +5V_2, GND, S1 = PB8 (I2C1 SCL), S2 = PB9 (I2C1 SDA), A0–A4 = PA1–PA5, G1 = PB10 |
 | J1 | SWD (SWDIO PA13, SWCLK PA14) |
 | J2 | UART1 (PA9 TX, PA10 RX) — FTDI on COM7 |

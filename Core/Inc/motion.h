@@ -82,9 +82,47 @@ bool Motion_Forward(float mm, float v_max_mm_s, float accel_mm_s2);
 
 /* In-place turn about the robot centre. deg > 0 = clockwise (right).
  * v/accel are wheel speeds along the arc. Rejected if a wheel would need to
- * reverse but cannot (see Motion_CanTurn). */
+ * reverse but cannot (see Motion_CanTurn).
+ * Gyro-closed (2026-11-11, off by default): with GYROTURN 1 and a calibrated
+ * IMU the encoder trapezoid still does the whole turn, then correction spins
+ * make the gyro-measured angle match deg (see motion.c, "gyro-closed turns"). */
 bool Motion_Turn(float deg, float v_wheel_mm_s, float accel_mm_s2);
 bool Motion_CanTurn(bool clockwise);
+
+/* GYROTURN setting, default OFF (postponed, see docs/firmware.md). Gyro turns
+ * are used only while it is on AND the IMU is present and calibrated
+ * (Motion_GyroTurnActive); otherwise Motion_Turn is the plain encoder turn. */
+void Motion_SetGyroTurn(bool on);
+bool Motion_GetGyroTurn(void);
+bool Motion_GyroTurnActive(void);
+
+typedef enum {
+    MOTION_GT_ENCODER = 0,  /* encoder turn (GYROTURN 0 or no calibrated IMU)    */
+    MOTION_GT_OK,           /* gyro-closed: ended within tolerance               */
+    MOTION_GT_LIMIT,        /* gyro-closed: correction count / time limit hit    */
+    MOTION_GT_DISAGREE,     /* gyro and encoders disagree grossly: no correction */
+    MOTION_GT_LOST,         /* IMU stopped answering during the turn             */
+    MOTION_GT_ABORTED,      /* STOP or following error                           */
+} MotionGyroResult;
+
+#define MOTION_GT_MAX_CORR 4U   /* correction spins per gyro-closed turn */
+
+/* Result of the last Motion_Turn, complete once Motion_IsBusy() is false. */
+typedef struct {
+    float cmd_deg;          /* commanded, + = clockwise                       */
+    float gyro_deg;         /* measured by the gyro (if gyro_valid)           */
+    float enc_deg;          /* from the wheel encoders (incl. corrections)    */
+    float heading_deg;      /* gyro heading at the end (since the last cal.)  */
+    float meas[MOTION_GT_MAX_CORR];  /* gyro angle before each correction     */
+    uint32_t ms;            /* duration including corrections                 */
+    uint8_t event;          /* MotionEvent that ended it                      */
+    uint8_t result;         /* MotionGyroResult                               */
+    uint8_t corrections;    /* correction spins made                          */
+    bool gyro_valid;
+} MotionTurnReport;
+
+bool Motion_GetTurnReport(MotionTurnReport *r);   /* false: no turn yet */
+const char *Motion_GyroResultName(uint8_t result);
 
 /* Pivot turn: the inner wheel stays still, the outer wheel drives forward
  * along an arc of radius = track width. deg > 0 = clockwise (right). Needs no

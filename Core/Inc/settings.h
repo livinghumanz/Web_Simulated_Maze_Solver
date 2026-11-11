@@ -7,6 +7,9 @@
  *
  * Saving erases a 128 KB sector, which stalls the CPU for ~1-2 s: only save
  * while the robot is standing still.
+ *
+ * Layout version 2 (2026-11-11) adds GYROTURN and the gyro bias in use at the
+ * time of SAVE. Version 1 data still loads (gyro fields keep their defaults).
  */
 
 #include <stdbool.h>

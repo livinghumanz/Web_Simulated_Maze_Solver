@@ -2,7 +2,7 @@
 #include <stdio.h>
 
 /* --- Internal helpers: switch SDA between OUT (drive) and IN (release) --- */
-static void SDA_OutOD(SWI2C_Bus_t *bus)
+static void SDA_ConfigOD(SWI2C_Bus_t *bus)
 {
     GPIO_InitTypeDef GPIO_InitStruct = {0};
     GPIO_InitStruct.Pin   = bus->SDA_Pin;
@@ -12,13 +12,29 @@ static void SDA_OutOD(SWI2C_Bus_t *bus)
     HAL_GPIO_Init(bus->SDA_Port, &GPIO_InitStruct);
 }
 
+/* RatRocket change (2026-11-11): the vendor switched SDA with a full
+ * HAL_GPIO_Init() three times per byte, which made a 2-byte register read take
+ * ~0.85 ms at 40 MHz (-O0 build). SWI2C_Init() still configures the pin fully
+ * (open-drain, pull-up, very high speed, above); afterwards only its two MODER
+ * bits change (01 output / 00 input). OTYPER, PUPDR and OSPEEDR keep their
+ * values, so the pin ends up exactly as the HAL calls left it. */
+static void SDA_SetMode(SWI2C_Bus_t *bus, uint32_t mode)   /* 1 = output, 0 = input */
+{
+    uint32_t pos = 2U * (uint32_t)__builtin_ctz((unsigned)bus->SDA_Pin);
+    uint32_t primask = __get_PRIMASK();
+    __disable_irq();
+    bus->SDA_Port->MODER = (bus->SDA_Port->MODER & ~(3UL << pos)) | (mode << pos);
+    __set_PRIMASK(primask);
+}
+
+static void SDA_OutOD(SWI2C_Bus_t *bus)
+{
+    SDA_SetMode(bus, 1U);                            // drive (open-drain)
+}
+
 static void SDA_InPU(SWI2C_Bus_t *bus)
 {
-    GPIO_InitTypeDef GPIO_InitStruct = {0};
-    GPIO_InitStruct.Pin   = bus->SDA_Pin;
-    GPIO_InitStruct.Mode  = GPIO_MODE_INPUT;         // release line
-    GPIO_InitStruct.Pull  = GPIO_PULLUP;
-    HAL_GPIO_Init(bus->SDA_Port, &GPIO_InitStruct);
+    SDA_SetMode(bus, 0U);                            // release line (pull-up stays on)
 }
 
 static void SCL_OutOD(SWI2C_Bus_t *bus)
@@ -48,7 +64,7 @@ void SWI2C_Init(SWI2C_Bus_t *bus)
     if (bus->DelayTicks == 0) bus->DelayTicks = 40;
 
     SCL_OutOD(bus);
-    SDA_OutOD(bus);
+    SDA_ConfigOD(bus);
 
     SDA_H(bus);
     SCL_H(bus);

@@ -140,6 +140,7 @@ setting (84 MHz) crashed at random on this board.
 |---|---|---|
 | `motion` (`motion.c`) | High, 1 kHz | Encoders, speed profiles, per-wheel PID, motor PWM |
 | `ultrasonic` (`ultrasonic.c`) | AboveNormal | Fires the 3 HC-SR04 in turn; echoes timed by EXTI + DWT cycle counter |
+| `imu` (`imu.c`, maze mode) | AboveNormal, 200 Hz | MPU6050 over software I2C: gyro Z read, heading integration, bias calibration. Owns the I2C bus; the motion task only calls its getters |
 | `defaultTask` → `app_*.c` | Normal | Mode logic and Bluetooth console; the maze run executes here |
 | `telemetry` / `motion_ev` | BelowNormal | Formats motion samples / events for the log |
 
@@ -167,6 +168,8 @@ Rules that keep timing clean:
 | `ultrasonic.c/.h` | HC-SR04 driver, median reads |
 | `maze_run.c/.h` | Flood-fill run with real sensors: sense → plan → turn → drive one cell |
 | `settings.c/.h` | Save/load maze-mode settings in MCU flash sector 7 |
+| `imu.c/.h` | IMU task: heading/rate getters, GYROCAL, boot calibration, `IMU`/`GYRO`/`GYROCAL` console output |
+| `sw_i2c.c/.h`, `mpu6050_sw.c/.h` | Vendor software I2C and MPU6050 driver (additions: configure, gyro-Z read; faster SDA switching) |
 | `dfu.c/.h` | `UPDATE` / `DFU` command: restart into the tinyuf2 USB bootloader (RATROCKET drive) |
 | `app_*.c/.h` | One file per DIP mode (console + mode logic) |
 
@@ -188,6 +191,13 @@ Kept small on purpose:
   settings.
 - `system_stm32f4xx.c` — `USER_VECT_TAB_ADDRESS` with `VECT_TAB_OFFSET`
   0x10000, so the vector table is at 0x08010000.
+- `sw_i2c.c` (vendor software I2C) — SDA direction is switched by its two
+  `MODER` bits instead of a full `HAL_GPIO_Init()` three times per byte
+  (pins are still fully configured once in `SWI2C_Init`): a 2-byte register
+  read went from 855 to 582 µs.
+- `mpu6050_sw.c/.h` (vendor MPU6050 driver) — additions only:
+  `MPU6050_Configure()` (clock, DLPF, full scale, sample rate, read-back) and
+  `MPU6050_ReadGyroZ()`.
 
 ## Motion control (`motion.c`)
 
@@ -209,6 +219,216 @@ Kept small on purpose:
   `MOTION_LEFT_CAN_REVERSE 1 (both wheels reverse since the 2026-11-07 repair)` in `motion.h`. Left wheel only drives forward or
   coasts; left in-place turns are done as 270° right turns. Set the flag to 1
   after the repair.
+
+## Gyro and gyro-closed turns (2026-11-11)
+
+In maze mode an MPU6050 on header H2 (see [hardware.md](hardware.md)) measures
+every in-place turn, and can make turns end on the angle the gyro measured
+instead of the angle the wheels claim (`GYROTURN 1`).
+
+**Status (2026-11-11): gyro-closed turns are implemented but OFF by default
+(`GYROTURN 0`, also saved as 0 on the robot).** The gyro calibration (scale
+check against a reference) was postponed by the user, so `TURN`, `Maze_Spin`,
+U-turns and the escape run use the unchanged encoder turns. The IMU task, the
+`IMU`/`GYRO`/`GYROCAL`/`GYROTURN` commands and the gyro numbers in the `TURN`
+reply stay active: they only measure. See [Status and how to
+resume](#status-and-how-to-resume).
+
+### IMU task (`imu.c`)
+
+- Own FreeRTOS task `imu`, AboveNormal priority, 200 Hz (`vTaskDelayUntil`,
+  5 ms). The bit-banged I2C never runs inside the 1 kHz motion task; that task
+  only calls `Imu_HeadingDeg()` / `Imu_RateDps()` (critical sections, no
+  waiting).
+- Set-up at start: I2C bus recovery (up to 9 SCL pulses if the chip holds SDA
+  low after a reset in the middle of a read), `DEVICE_RESET`, wake, clock =
+  PLL on the X gyro (more stable than the internal oscillator), sample rate
+  1 kHz, DLPF 42 Hz, gyro ±500 °/s, accel ±2 g, read-back check. The faster
+  bus setting (delay loop 4 instead of the vendor's 40) is used only if 20
+  read-backs of WHO_AM_I and the configuration are clean.
+- **Full scale ±500 °/s** (65.5 LSB per °/s): the fastest spin the firmware
+  allows (`VTURN` 160 mm/s on the 96 mm track) is ~190 °/s, so ±250 would
+  leave almost no headroom for bumps; ±500 keeps 2.6× headroom at
+  0.015 °/s per LSB, below the sensor noise (0.035 °/s rms measured).
+  ±1000 would only halve the resolution.
+- **DLPF 42 Hz** (4.8 ms delay): anti-alias filter for 200 Hz polling (motor
+  vibration lies above 100 Hz). The delay does not matter because turns are
+  measured at rest.
+- Each cycle reads gyro Z only (2 bytes, 0.58 ms ≈ 12 % CPU); every 20th
+  cycle the whole 14-byte block (1.8 ms) so the accelerometer stays available
+  (`IMU`). The heading is the trapezoid integral of the bias-corrected rate
+  over the **real elapsed time between reads from the DWT cycle counter**
+  (crystal-accurate), not an assumed 5 ms. Measured: 200.5 samples/s while
+  turning, longest gap 5.05 ms (0.73 s during `SAVE`, when flash erase stops
+  the CPU; integration stays correct because the robot stands still).
+- A single implausible sample (rate jump > 46 °/s within 5 ms; a real turn
+  changes < 2 °/s per sample behind the filter) is replaced by the previous
+  one, a second in a row is accepted. Read errors, replaced glitches and
+  saturated samples are counted (`IMU`); all were 0 in the tests.
+- **Sign convention: heading and rate are clockwise-positive, like `TURN`
+  (+ = right).** The module's Z axis points up (acc Z ≈ +14200), so clockwise
+  is negative raw gyro Z: `IMU_YAW_SIGN -1` in `imu.c`, verified with
+  `TURN 90` (gyro +90.48°).
+- API (`imu.h`): `Imu_Present()`, `Imu_Calibrated()`, `Imu_HeadingDeg()`,
+  `Imu_RateDps()`, `Imu_ResetHeading()`, `Imu_Calibrate()`, `Imu_GetBias()`.
+
+### Gyro bias (zero-rate offset, about −1.7 °/s on this module)
+
+- `GYROCAL` averages 1 s (200 samples of X/Y/Z) with the robot still and
+  prints bias and noise. It is **rejected** (bias unchanged, message says why)
+  if the Z noise exceeds 0.30 °/s rms or X/Y 0.50 °/s (someone touching the
+  robot or its cable), if the mean exceeds 20 °/s (turning steadily), or if a
+  move ran meanwhile. On success the heading is reset to 0.
+- **At boot** the same calibration runs in the background in the IMU task:
+  the console is not delayed (the result line appears ~1.3 s after start) and
+  a robot that is not still skips it with a console note.
+- `SAVE` stores the bias in use.
+- **Precedence:** a calibration from this session (boot or `GYROCAL`) > the
+  saved value (only used when the boot calibration was skipped, e.g. a start
+  on a slope or in a hand) > none: gyro turns stay off (plain encoder turns)
+  until `GYROCAL` succeeds. `LOAD` never replaces a calibration from this
+  session. `CFG` shows the bias in use, its source and the saved value.
+
+### Gyro-closed turns (`motion.c`, section "gyro-closed turns")
+
+`Motion_Turn` - and so `TURN`, `Maze_Spin`, `Maze_Turn` with `PIVOTS 0`,
+U-turns, `CALSPIN`, `CENTER` - works like this when `GYROTURN 1` (off by
+default, experimental; `SAVE` keeps the setting) and the IMU is present and
+calibrated:
+
+1. The encoder trapezoid drives the whole commanded angle, exactly as before.
+2. At rest (≥ 120 ms after the profile and the gyro < 2 °/s for 60 ms, at
+   most 500 ms) the gyro angle since the start is compared with the command.
+3. If |error| > 0.5° a correction spin is added: again an encoder trapezoid
+   at the turn's speed, continuing from the held wheel targets, of
+   0.8 × error (× k for the first correction, k = encoder degrees per gyro
+   degree in the main spin, limited to 0.7-1.3). Then back to 2.
+4. Bounded: at most 4 corrections and 2 s + 5 ms per commanded degree for the
+   correction phase (2.45 s for 90°, 2.9 s for a U-turn), then it stops
+   wherever it is ("gyro limit").
+5. Plausibility: if after the main spin the gyro shows the wrong sign or less
+   than 50 % / more than 150 % of the command (|error| > 5° below 10°), the
+   gyro is not trusted for this turn (wrong axis, loose module): no
+   correction, "gyro disagrees".
+
+Why this design: the encoder trapezoid is smooth and already tuned;
+measuring only at rest makes the filter and sampling delay irrelevant and
+cannot oscillate; the damped steps (0.8) converge from one side - on the bench
+a correction moved the robot up to 2× the commanded angle. Corrections that
+are too small to overcome static friction add up on the held wheel targets
+until the wheels move.
+
+With `GYROTURN 0` (default), or without a calibrated IMU, the turn is the
+unchanged encoder turn (300 ms hold, then coast): `settle_done()` then returns
+exactly the old `SETTLE_MS` condition and the IMU is only read to report the
+angle. `Motion_Pivot` / `PIVOT` never use the gyro. The `TURN` reply keeps its
+prefix and adds the numbers in one line, for encoder turns too:
+
+```
+TURN done (event 2) cmd 90.00 gyro 88.40 enc 90.97 | encoder turn, corr 0, 1.95 s, hdg 88.42
+TURN done (event 2) cmd 90.00 gyro 89.71 enc 89.01 | gyro ok, corr 1 (91.16), 1.98 s, hdg 60.85
+```
+
+`cmd` commanded, `gyro` measured by the gyro, `enc` from the wheel encoders,
+then the result (`gyro ok`, `gyro limit`, `gyro disagrees, not corrected`,
+`gyro lost`, `aborted`, `encoder turn`), the number of corrections with the
+gyro angle before each one, the duration and the gyro heading since the last
+calibration. The last line of `CFG`:
+
+```
+     imu present  gyro bias -1.70 deg/s (boot cal; saved -1.70)  gyroturn 0 (encoder turns)
+```
+
+### Any angle
+
+Nothing in the turn path assumes 90° steps: the arc is computed from the
+angle, the heading is an unwrapped float (360° and more need no wrap
+handling), the plausibility check is relative (absolute below 10°), the
+time-out grows with the angle and `TURN` accepts up to ±1080°.
+
+### Test on the robot (2026-11-11)
+
+USB-C power, robot on a table, short USB cable managed by hand between turns.
+Because of the cable only ±90° turns, alternating, 8 s apart, were driven
+with the final tuning (`GYROTURN 1` set for the test). Before: `GYROCAL` bias
+−1.708 °/s (X −4.38, Y −8.69), noise Z 0.032 °/s rms; `GYRO` at rest −0.01°
+in 2 s.
+
+| # | cmd | gyro | error | encoders | corrections (gyro angle before each) | result | time |
+|---|---|---|---|---|---|---|---|
+| 1 | +90 | 89.93 | −0.07 | 91.06 | 0 | ok | 1.77 s |
+| 2 | −90 | −89.08 | +0.92 | −100.97 | 4 (−79.58 −89.04 −89.07 −89.07) | limit | 2.76 s |
+| 3 | +90 | 89.91 | −0.09 | 91.08 | 0 | ok | 1.77 s |
+| 4 | −90 | −90.18 | −0.18 | −96.49 | 3 (−84.77 −87.60 −89.10) | ok | 2.52 s |
+| 5 | +90 | 90.08 | +0.08 | 91.06 | 0 | ok | 1.77 s |
+| 6 | −90 | −90.47 | −0.47 | −95.03 | 4 (−86.31 −86.33 −91.88 −90.50) | ok | 2.74 s |
+| 7 | +90 | 89.58 | −0.42 | 89.95 | 2 (90.77 89.06) | ok | 2.20 s |
+| 8 | −90 | −89.75 | +0.25 | −93.54 | 3 (−87.46 −87.48 −89.24) | ok | 2.46 s |
+| `GYROTURN 0` | +90 | 88.40 | −1.60 | 90.97 | - | encoder turn | 1.95 s |
+| `GYROTURN 0` | −90 | −88.49 | +1.51 | −91.32 | - | encoder turn | 1.95 s |
+
+- All 8 gyro-closed turns ended within ±0.92° of the command (target ±2°);
+  the four +90° add up to 359.50°, the four −90° to −359.48°, and the heading
+  after all 8 was 0.03°. `GYRO` at rest afterwards: 0.00° in 2 s.
+- Clockwise main spins landed within 1°; anticlockwise ones slipped 3-12 %
+  and needed 3-4 corrections. Turn 2 stopped at −89.07° for three corrections
+  (static friction: the steps were too small to move the wheels) and ended
+  as "gyro limit", still 0.92° from the command.
+- A turn without corrections takes 1.77 s instead of 1.95 s (it ends when the
+  gyro says the robot is at rest instead of after a fixed 300 ms).
+- Settings survive a re-flash: `SAVE`, then the same `.uf2` flashed again:
+  `CFG` unchanged, `gyroturn` as saved, saved bias −1.71 °/s, boot
+  calibration −1.71 °/s.
+- The same day, with an earlier tuning and the cable snagging, 16 ±90° turns
+  gave 14 within ±0.6° and two outside ±2° (+2.16°, −4.00°) after main spins
+  that slipped 29-35 % with corrections responding 0.4-2.6×; since then k
+  scales only the first correction (max 1.3). Before the cable limit was
+  known, −180, 360, −360 and 45 were driven with that older tuning (results
+  disturbed by the cable). A ±180° encoder/gyro cross-check with the final
+  tuning was started and then stopped by the user's decision to postpone;
+  its results were not recorded. **45°, 135°, 180° and 360° have not been
+  verified with the final tuning.**
+- Encoder vs gyro over all 39 turns of the day: the cleanest turns agree
+  within gyro/encoder 0.987-1.008 (12 turns); the others range 0.66-0.97 for
+  the same command minutes apart. A gyro scale error would give one constant
+  ratio, so the spread is turn-by-turn slip (cable, table); the sign is right
+  in every turn and the bias residual is ≤ 0.02° per 2 s. The gyro scale is
+  therefore consistent with the encoder calibration to about −1.3 … +0.8 %,
+  but it has **not** been checked against a reference without slip.
+
+### Status and how to resume
+
+| Item | State |
+|---|---|
+| IMU task, 200 Hz, ±500 °/s, DLPF 42 Hz, DWT-timed integration | implemented, runs in maze mode, 0 read errors in > 50 000 samples |
+| Sign (clockwise +), bias calibration (`GYROCAL`, boot, saved) | implemented and verified on the robot |
+| `GYRO`, `IMU`, `CFG` line, gyro/encoder numbers in `TURN done` | implemented and verified |
+| Gyro-closed turns (`GYROTURN 1`) | implemented, **off by default**; ±90° verified on USB power with the cable (8/8 within ±0.92°) |
+| Gyro scale against a slip-free reference | **not verified** (datasheet ±3 %) |
+| Any angle (45/135/180/360) with the final tuning | **not verified** on the robot (code review only) |
+| Turns on battery, on the maze floor, in an escape run | **not tested** |
+
+To resume (robot on battery, on the maze floor, no USB cable if possible):
+
+1. `CFG`: check `imu present` and the bias; `GYROCAL` with the robot still
+   (bias about −1.7 °/s, noise < 0.05 °/s).
+2. Gyro scale with the trusted encoder turns (`GYROTURN 0`): `TURN 360` and
+   `TURN -360` (TURN 360 ended within 1-2° on the floor on 2026-11-07); the
+   `gyro` value in the reply should read 360 ± 2. Also check by eye that the
+   robot faces the start direction again. If the gyro is consistently off by
+   more than ~0.5 %, add a gyro scale factor in `imu.c` (`IMU_LSB_PER_DPS`)
+   before going on.
+3. `GYROTURN 1`, then ±90, ±180, ±45, ±135 and ±360, 8 s apart; for every
+   turn compare `cmd`, `enc` and `gyro`. A large encoder/gyro disagreement
+   means: check the gyro scale, sign and bias first, then the turn controller
+   (`GT_*` constants in `motion.c`).
+4. One escape run with `GYROTURN 1` (Maze_Spin/U-turns are gyro-closed). The
+   maze turn time-out is 8 s (`TURN_TIMEOUT_MS`); a gyro U-turn needs ~3.5 s
+   plus up to ~4 s of corrections in the worst case, so watch for
+   `[MAZE] move timed out` and shorten `GT_PHASE_*` or raise the time-out if
+   it appears.
+5. If it is better than the encoder turns: `SAVE` with `GYROTURN 1`. To go
+   back at any time: `GYROTURN 0` (and `SAVE`).
 
 ## Maze mode
 
@@ -234,7 +454,7 @@ nominal pitch; the next wall it sees corrects the error.
 | Single moves | `FWD <mm> [v]`, `TURN <deg> [v]` (spin, + = clockwise), `PIVOT <deg> [v]`, `CELL`, `STOP` |
 | Escape | `ESCAPE`, `ENTRY <n>`, `BTN ESCAPE\|GO` (what the PB2 button starts) |
 | Push game | `PUSH` (motors off, push the robot by hand; encoders track it; `STOP` ends) |
-| IMU | `IMU` (scan header H2 over software I2C, WHO_AM_I, 5 raw accel/gyro samples) |
+| IMU | `IMU` (status, read timing, error counters, 5 raw accel/gyro samples), `GYRO` (heading and rate 10× over 2 s, then totals), `GYROCAL` (gyro bias, keep the robot still 1 s), `GYROTURN 0\|1` (1 = turns end on the gyro angle; default 0, experimental) - see [Gyro](#gyro-and-gyro-closed-turns-2026-11-11) |
 | Maze | `GO`, `GOTO <x> <y>`, `POSE <x> <y> <N\|E\|S\|W>`, `RESETMAP`, `MAP`, `WHERE`, `MAZEDEF <n> <hex>`, `WALLSREP` |
 | Settings | `SIZE`, `GOAL`, `PITCH`, `TRACK`, `VRUN`, `VTURN`, `KC <p> <d>`, `HOME 0\|1`, `ALIGN 0\|1`, `SENSE 0\|1`, `WALLUPD 0\|1`, `PIVOTS 0\|1`, `CFG` |
 | Keep settings | `SAVE` (to MCU flash, survives power-off; robot freezes ~2 s), `LOAD`, `DEFAULTS` (also erases the saved copy) |
@@ -270,7 +490,10 @@ release. During a run, `STOP` or the button aborts.
 
 `SAVE` stores the current settings in the MCU's flash (sector 7, see
 `settings.c`); they are loaded at every boot. Unsaved changes are lost at
-power-off.
+power-off. Since 2026-11-11 the stored layout is version 2: version 1 plus
+`GYROTURN` and the gyro bias in use at the time of `SAVE`. Version-1 data
+still loads (the gyro fields then keep their defaults); firmware older than
+2026-11-11 does not read version 2 and falls back to its defaults.
 
 ## Escape game (`ESCAPE`)
 
@@ -306,7 +529,10 @@ Fit and safety rules used here:
 
 **Since 2026-11-07 (left reverse repaired) the default is spins (`PIVOTS 0`,
 saved in flash).** TURN 360 on the floor with the powerbank: right exact,
-left 1-2° over. Escape run with spins: ESCAPED, front stops at 32-37 mm
+left 1-2° over. Since 2026-11-11 spins can end on the gyro angle when the IMU
+is fitted (`GYROTURN 1`, experimental and off by default, see
+[Gyro](#gyro-and-gyro-closed-turns-2026-11-11)); pivots are unchanged
+(encoders only). Escape run with spins: ESCAPED, front stops at 32-37 mm
 (target 33), side readings 45-54 mm (target 48). The pivot notes below
 are kept for reference.
 
