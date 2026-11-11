@@ -349,5 +349,10 @@ and the SWEEP table (200 -> 0, 300 -> 930/930, ... 1010 -> 4134/3874 cps)
 ending in `SWEEP done`. Observation worth teaching: `PWM 0 -300` did not
 start the right wheel backwards (0 pulses) while +300 forward runs - the
 start threshold differs by direction. Still to confirm by eye in the
-browser: DIP drawing ON direction, wheel arrow directions; PID and
-Kalibrieren tabs not yet replayed (need SW1+SW2 and SW3).
+browser: DIP drawing ON direction, wheel arrow directions; Kalibrieren tab not yet replayed (needs SW3 and the floor).
+
+PID tab replayed the same way in PID-test mode (SW1+SW2): `GAINS:` reply,
+each of `KP/KI/KD/KFF/KS` answered with the full `GAINS:` line (presets
+"zu weich" and "Werkseinstellung" applied), `TEL 100` -> `telemetry every
+100 ms`, `FWD 300` -> `[EV] START`, 36 `[P] t vt v e d` samples, `[EV] DONE
+t=3608ms dist=300.000mm final err L=-12 R=-16 counts`. All as mapped.
