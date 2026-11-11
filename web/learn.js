@@ -74,7 +74,8 @@
   /* ---------------- tooltips (as in the editor) ---------------- */
   let tipFor = null;
   function showTip(btn) {
-    const txt = btn.dataset.tip || t(btn.dataset.tipKey || '');
+    const k = btn.dataset.tipKey || '';
+    const txt = btn.dataset.tip || (k.indexOf('ed:') === 0 ? E(k.slice(3)) : t(k));
     if (!txt) return;
     const tip = $('tip');
     tip.textContent = txt;
@@ -106,6 +107,32 @@
     if (b) { e.preventDefault(); if (tipFor === b) hideTip(); else showTip(b); }
   });
   const info = (key, dark) => '<button class="info' + (dark ? ' info-dk' : '') + '" type="button" data-tip-key="' + key + '" aria-label="Info">i</button>';
+
+  /* The editor's own words and block glyphs (code-data.js, RRData), so the
+     blocks here read exactly like in RatRocket Code. A copy if it is missing. */
+  const ED = window.RRData || null;
+  const ED_FALL = {
+    de: { b_move: 'fahre 1 Feld', b_setVar: 'setze {v} auf {n}', b_changeVar: '\u00e4ndere {v} um {n}', b_showVar: 'zeige {v}',
+      b_repeatUntil: 'wiederhole bis {c}', watch: 'Variablen', shown: 'Gezeigt', run: 'Los!', step: 'Schritt', reset: 'Zur\u00fcck',
+      program: 'Dein Programm', numLabel: 'Zahl', varSuggest: ['Schritte'],
+      failedWall: 'Autsch \u2013 da ist eine Wand. Schau dir den Weg noch einmal an.',
+      failedLong: 'Das Programm l\u00e4uft zu lange. Fehlt eine Abbruchbedingung?',
+      i_watch: 'Was gerade auf jedem Zettel steht. Gold umrandet: was sich zuletzt ge\u00e4ndert hat. Darunter: was \u201ezeige\u201c gezeigt hat.' },
+    en: { b_move: 'move 1 cell', b_setVar: 'set {v} to {n}', b_changeVar: 'change {v} by {n}', b_showVar: 'show {v}',
+      b_repeatUntil: 'repeat until {c}', watch: 'Variables', shown: 'Shown', run: 'Go!', step: 'Step', reset: 'Reset',
+      program: 'Your program', numLabel: 'Number', varSuggest: ['Steps'],
+      failedWall: 'Ouch \u2013 there is a wall. Look at the path again.',
+      failedLong: 'The program runs too long. Is a stop condition missing?',
+      i_watch: 'What each note says right now. Gold outline: what changed last. Below: what "show" showed.' },
+  };
+  function E(k) {
+    const T = ED && ED.TEXT && ED.TEXT[lang];
+    const v = T && T[k] != null ? T[k] : ED_FALL[lang][k];
+    return v != null ? v : k;
+  }
+  const edText = (k) => E(k);                 /* the self-test has its own E */
+  const BLK = (ED && ED.BLOCKS) || { move: { glyph: '\u25b2' }, repeatUntil: { glyph: '\u27f3' },
+    setVar: { glyph: '=' }, changeVar: { glyph: '\u00b1' }, showVar: { glyph: '\u25c9' } };
 
   /* ---------------- shared topic frame ---------------- */
   /* o: { lead, main, side, merk, tryItems(), bridge() } -> refs */
@@ -1466,6 +1493,580 @@
   }
 
   /* ======================================================================
+   * 6. Gyroscope - turn rate, added-up angle, bias and drift
+   *
+   * The MPU6050 on header H2 (hardware.md): at rest it reported about -240
+   * raw on the vertical axis, -1.8 deg/s at 131 raw per deg/s. Model: the
+   * robot's real turn rate follows the command with a 0.05 s lag; the gyro
+   * reads real rate + bias + a little noise; 500 times a second that reading
+   * (minus the calibrated bias) is added to the angle. Drift, and the few
+   * degrees an uncalibrated 90 degree turn is off, follow from these numbers.
+   * ==================================================================== */
+  const GY = { bias: -1.8, noise: 0.3, tau: 0.05, dt: 0.002, turnV: 60, calT: 1, rMax: 200, T: 60, fast: 10 };
+  function gyNew(bias) {
+    return { t: 0, w: 0, cmd: 0, th: 0, h: 0, bias, est: 0, calib: null, calOk: false, turn: null,
+      seed: 12345, m: bias, hist: [[0, 0]], nextRec: 0.1, fastUntil: 0 };
+  }
+  function gyNoise(s) {
+    s.seed = (s.seed * 1103515245 + 12345) & 0x7fffffff;
+    return (s.seed / 0x7fffffff * 2 - 1) * GY.noise;
+  }
+  function gyStep(s) {
+    const dt = GY.dt;
+    if (s.turn && !s.turn.stopped) {
+      const rem = (s.turn.target - s.h) * s.turn.dir;
+      if (rem <= 0.02) { s.cmd = 0; s.turn.stopped = true; }
+      else s.cmd = s.turn.dir * clamp(rem * 3, 4, GY.turnV);
+    }
+    s.w += (s.cmd - s.w) * dt / GY.tau;
+    if (s.turn && s.turn.stopped && !s.turn.done && Math.abs(s.w) < 0.01) { s.turn.done = true; s.turn.h1 = s.h; s.turn.th1 = s.th; }
+    s.th += s.w * dt;
+    s.m = s.w + s.bias + gyNoise(s);
+    s.h += (s.m - s.est) * dt;
+    if (s.calib) {
+      if (Math.abs(s.w) > 0.3) { s.calib = null; s.calFail = true; }
+      else {
+        s.calib.sum += s.m; s.calib.n++;
+        if (s.calib.n * dt >= GY.calT - 1e-9) { s.est = s.calib.sum / s.calib.n; s.calib = null; s.calOk = true; s.calDone = true; }
+      }
+    }
+    s.t += dt;
+    if (s.t >= s.nextRec - 1e-9) {
+      s.hist.push([s.t, s.h - s.th]);
+      s.nextRec += 0.1;
+      if (s.hist.length > 1500) s.hist.splice(0, 500);
+    }
+  }
+  function gyAdvance(s, sec) {
+    const n = Math.round(sec / GY.dt);
+    for (let i = 0; i < n; i++) gyStep(s);
+  }
+  const wrap180 = (a) => ((a % 360) + 540) % 360 - 180;
+
+  function viewGyro(main, tp) {
+    const RCX = 160, RCY = 196, GCX = 455, GCY = 232, GR = 128, DCX = 748, DCY = 188, DR = 106;
+    let s = gyNew(GY.bias);
+    let ev = null, evVars = {}, moved = false, waitFrom = 0;
+    const deg = (x, d) => (x > 0.05 ? '+' : x < -0.05 ? '\u2212' : '') + nf(Math.abs(x), d == null ? 1 : d) + '\u00b0';
+
+    const sh = topicShell(main, tp, {
+      lead: 'gy_lead', merk: 'gy_merk',
+      main:
+        '<div class="stagebox"><div class="stage-cap">' + info('gy_tipStage', true) + '</div>' +
+          '<svg class="gy-stage" viewBox="0 0 900 370" role="img"></svg></div>' +
+        '<div class="stage-tools">' +
+          '<button class="btn btn-sm gy-turnL" type="button">\u21b6 <span data-t="gy_turnL"></span></button>' +
+          '<button class="btn btn-sm gy-turnR" type="button"><span data-t="gy_turnR"></span> \u21b7</button>' +
+          '<button class="btn btn-sm gy-stop" type="button">' + ICO.pause + '<span data-t="gy_stop"></span></button>' +
+          '<span class="spacer"></span>' +
+          '<button class="btn btn-sm btn-go gy-drift" type="button">' + ICO.play + '<span data-t="gy_drift"></span></button>' +
+          '<button class="btn btn-sm gy-wait" type="button">\u23f1 <span data-t="gy_wait"></span></button>' +
+          '<button class="btn btn-sm btn-ghost gy-zero" type="button">' + ICO.zero + '<span data-t="gy_zero"></span></button>' +
+        '</div>' +
+        '<div class="scope"><div class="stage-cap"><span data-t="gy_curve"></span>' + info('gy_tipCurve', true) + '</div>' +
+          '<svg class="gy-curve" viewBox="0 0 900 196" role="img"></svg></div>' +
+        '<section class="panel"><h2 class="panel-h"><span data-t="gy_calcT"></span></h2><ol class="calc calc-2 gy-calc"></ol></section>',
+      side:
+        '<section class="panel">' +
+          '<div class="ctl"><div class="ctl-head"><span data-t="gy_rate"></span><output class="ctl-val gy-rate-v"></output></div>' +
+            '<input type="range" class="gy-rate" min="-180" max="180" step="10" data-ta="gy_rate"><p class="ctl-hint" data-t="gy_rateHint"></p></div>' +
+          '<div class="ctl gy-calrow"><div class="ctl-head"><button class="btn btn-sm btn-primary gy-cal" type="button" data-t="gy_cal"></button>' +
+            '<span class="gy-calstate"></span></div><p class="ctl-hint" data-t="gy_calHint"></p></div>' +
+          '<details class="pro"><summary data-t="gy_biasOpen"></summary>' +
+            '<div class="ctl"><div class="ctl-head"><span data-t="gy_bias"></span><output class="ctl-val gy-bias-v"></output></div>' +
+            '<input type="range" class="gy-bias" min="-5" max="5" step="0.1" data-ta="gy_bias"><p class="ctl-hint" data-t="gy_biasHint"></p></div>' +
+          '</details>' +
+        '</section>' +
+        '<div class="status gy-status"></div>' +
+        '<div class="readouts readouts-3">' +
+          '<div class="ro"><span data-t="gy_calc"></span><b class="gy-h"></b></div>' +
+          '<div class="ro"><span data-t="gy_real"></span><b class="gy-th"></b></div>' +
+          '<div class="ro"><span data-t="gy_err"></span><b class="gy-e"></b></div>' +
+        '</div>',
+      tryItems: () => [
+        t('gy_try1', { imu: code('IMU') }),
+        t('gy_try2', { imu: code('IMU') }),
+        '<span class="soon">' + esc(t('wip')) + '</span> ' + esc(t('gy_trySoon')),
+      ],
+      bridge: () => '<span>' + esc(t('gy_bridge')) + '</span>' + code('IMU'),
+    });
+    const q = sh.q;
+
+    /* ---- stage ---- */
+    const st = q('.gy-stage');
+    sv('rect', { width: 900, height: 370, class: 'st-floor' }, st);
+    const lblRobot = sv('text', { x: 58, y: 40, class: 'st-txt' }, st);
+    sv('rect', { x: 30, y: 66, width: 260, height: 260, fill: '#1b2330' }, st);
+    sv('path', { d: 'M30 66 H290 V326 H30 Z', fill: 'none', stroke: 'var(--board)', 'stroke-width': 10 }, st);
+    sv('line', { x1: RCX, x2: RCX, y1: 76, y2: 316, class: 'st-grid' }, st);
+    sv('line', { y1: RCY, y2: RCY, x1: 40, x2: 280, class: 'st-grid' }, st);
+    const robot = sv('use', { href: '#bot' }, st);
+    const calBarBg = sv('rect', { x: 60, y: 300, width: 200, height: 10, rx: 5, fill: '#2b3445' }, st);
+    const calBar = sv('rect', { x: 60, y: 300, height: 10, rx: 5, fill: 'var(--pad)' }, st);
+    const calChip = sv('text', { x: 290, y: 40, class: 'st-txt-s gy-chip', 'text-anchor': 'end' }, st);
+
+    /* rate gauge: -200 .. +200 deg/s over a half circle */
+    const lblRate = sv('text', { x: GCX, y: 40, class: 'st-txt', 'text-anchor': 'middle' }, st);
+    sv('path', { d: 'M' + (GCX - GR) + ' ' + GCY + ' A' + GR + ' ' + GR + ' 0 0 1 ' + (GCX + GR) + ' ' + GCY, fill: 'none', stroke: '#2b3445', 'stroke-width': 18 }, st);
+    const rateArc = sv('path', { fill: 'none', stroke: 'var(--pad)', 'stroke-width': 18, opacity: 0.45 }, st);
+    for (let v = -200; v <= 200; v += 50) {
+      const a = v / GY.rMax * Math.PI / 2, big = v % 100 === 0;
+      const r0 = GR + 12, r1 = GR + (big ? 24 : 18);
+      sv('line', { x1: GCX + Math.sin(a) * r0, y1: GCY - Math.cos(a) * r0, x2: GCX + Math.sin(a) * r1, y2: GCY - Math.cos(a) * r1, stroke: '#5a6577', 'stroke-width': 2 }, st);
+      if (big) sv('text', { x: GCX + Math.sin(a) * (GR + 40), y: GCY - Math.cos(a) * (GR + 40) + 4, class: 'st-txt-s', 'text-anchor': 'middle' }, st).textContent = (v > 0 ? '+' : v < 0 ? '\u2212' : '') + Math.abs(v);
+    }
+    const needle = sv('line', { x1: GCX, y1: GCY, x2: GCX, y2: GCY - GR + 8, stroke: '#fff', 'stroke-width': 4, 'stroke-linecap': 'round' }, st);
+    sv('circle', { cx: GCX, cy: GCY, r: 9, fill: 'var(--board)' }, st);
+    const rateVal = sv('text', { x: GCX, y: GCY + 50, class: 'st-big', 'text-anchor': 'middle', style: 'font-size:34px;font-variant-numeric:tabular-nums' }, st);
+    sv('text', { x: GCX, y: GCY + 74, class: 'st-txt-s', 'text-anchor': 'middle' }, st).textContent = '\u00b0/s';
+
+    /* heading dial: 0 at the top, clockwise */
+    const lblHead = sv('text', { x: DCX, y: 40, class: 'st-txt', 'text-anchor': 'middle' }, st);
+    sv('circle', { cx: DCX, cy: DCY, r: DR, fill: '#1b2330', stroke: '#2b3445', 'stroke-width': 3 }, st);
+    for (let a = 0; a < 360; a += 30) {
+      const r = a * Math.PI / 180, big = a % 90 === 0;
+      sv('line', { x1: DCX + Math.sin(r) * (DR - (big ? 16 : 9)), y1: DCY - Math.cos(r) * (DR - (big ? 16 : 9)), x2: DCX + Math.sin(r) * DR, y2: DCY - Math.cos(r) * DR, stroke: '#5a6577', 'stroke-width': 2 }, st);
+      if (big) sv('text', { x: DCX + Math.sin(r) * (DR - 30), y: DCY - Math.cos(r) * (DR - 30) + 4, class: 'st-txt-s', 'text-anchor': 'middle' }, st).textContent = a + '\u00b0';
+    }
+    const errArc = sv('path', { fill: 'rgba(210,43,30,.35)', stroke: 'none' }, st);
+    const handReal = sv('line', { x1: DCX, y1: DCY, stroke: '#e7ecf3', 'stroke-width': 3, 'stroke-dasharray': '6 5', 'stroke-linecap': 'round' }, st);
+    const handCalc = sv('line', { x1: DCX, y1: DCY, stroke: 'var(--pad)', 'stroke-width': 6, 'stroke-linecap': 'round' }, st);
+    sv('circle', { cx: DCX, cy: DCY, r: 8, fill: 'var(--pad)' }, st);
+    const txCalc = sv('text', { x: DCX - DR, y: DCY + DR + 30, class: 'sc-lbl-g' }, st);
+    const txReal = sv('text', { x: DCX - DR, y: DCY + DR + 58, class: 'st-txt' }, st);
+    const fastBadge = sv('text', { x: 880, y: 360, class: 'st-txt', 'text-anchor': 'end', style: 'fill:var(--pad)' }, st);
+
+    /* ---- curve: computed minus real, last 60 s ---- */
+    const cv = q('.gy-curve');
+    const X0 = 64, X1 = 884, CYc = 114, KY = 1.05;
+    sv('rect', { width: 900, height: 196, class: 'st-floor' }, cv);
+    [-60, -30, 30, 60].forEach((v) => {
+      sv('line', { x1: X0, x2: X1, y1: CYc - v * KY, y2: CYc - v * KY, class: 'sc-grid' }, cv);
+      sv('text', { x: X0 - 6, y: CYc - v * KY + 4, class: 'sc-lbl', 'text-anchor': 'end' }, cv).textContent = (v > 0 ? '+' : '\u2212') + Math.abs(v) + '\u00b0';
+    });
+    sv('line', { x1: X0, x2: X1, y1: CYc, y2: CYc, class: 'sc-zero' }, cv);
+    sv('text', { x: X0 - 6, y: CYc + 4, class: 'sc-lbl', 'text-anchor': 'end' }, cv).textContent = '0';
+    const ticksG = sv('g', {}, cv);
+    const cLine = sv('polyline', { class: 'sc-line' }, cv);
+    const cDot = sv('circle', { r: 4.5, fill: 'var(--pad)' }, cv);
+
+    function judge() {
+      if (s.calib) return ['', 'gy_st_cal', {}];
+      if (ev) return [ev === 'gy_st_calMove' ? 'bad' : ev === 'gy_st_waited' && Math.abs(evVars.raw) > 3 ? 'bad' : ev === 'gy_st_turnDone' && Math.abs(evVars.raw) > 1 ? 'bad' : 'ok', ev, evVars];
+      if (Math.abs(s.w) >= 0.5 || (s.turn && !s.turn.done)) return ['', 'gy_st_turn', {}];
+      const e = s.h - s.th;
+      if (Math.abs(e) > 3) return ['bad', 'gy_st_drift', { e: deg(e, 0) }];
+      return ['', moved ? 'gy_st_still' : 'gy_st_ready', {}];
+    }
+    let verdict = 'gy_st_ready';
+
+    function draw() {
+      const ang = s.th;
+      robot.setAttribute('transform', 'translate(' + RCX + ' ' + RCY + ') rotate(' + ang.toFixed(2) + ') scale(1.55)');
+      const pr = s.calib ? clamp(s.calib.n * GY.dt / GY.calT, 0, 1) : 0;
+      calBar.setAttribute('width', (200 * pr).toFixed(1));
+      calBar.style.display = calBarBg.style.display = s.calib ? '' : 'none';
+      calChip.textContent = t('gy_calState') + ': ' + (s.calOk ? t('gy_calib') : t('gy_uncal'));
+      lblRobot.textContent = t('gy_robot'); lblRate.textContent = t('gy_rateL'); lblHead.textContent = t('gy_headL');
+      /* needle shows what the gyro reads (real rate + bias + noise) */
+      const m = clamp(s.m, -GY.rMax * 1.08, GY.rMax * 1.08);
+      const na = m / GY.rMax * 90;
+      needle.setAttribute('transform', 'rotate(' + na.toFixed(2) + ' ' + GCX + ' ' + GCY + ')');
+      needle.dataset.angle = na.toFixed(2);
+      const a1 = na * Math.PI / 180, R = GR;
+      rateArc.setAttribute('d', Math.abs(na) < 0.3 ? '' : 'M' + GCX + ' ' + (GCY - R) + ' A' + R + ' ' + R + ' 0 0 ' + (na > 0 ? 1 : 0) + ' ' + (GCX + Math.sin(a1) * R).toFixed(1) + ' ' + (GCY - Math.cos(a1) * R).toFixed(1));
+      rateVal.textContent = (s.m > 0.05 ? '+' : s.m < -0.05 ? '\u2212' : '') + nf(Math.abs(s.m), 1);
+      const hand = (el, a, len) => { const r = a * Math.PI / 180; el.setAttribute('x2', (DCX + Math.sin(r) * len).toFixed(1)); el.setAttribute('y2', (DCY - Math.cos(r) * len).toFixed(1)); };
+      hand(handReal, s.th, DR - 14); hand(handCalc, s.h, DR - 6);
+      const e = s.h - s.th;
+      if (Math.abs(e) > 0.5) {
+        const r0 = s.th * Math.PI / 180, r1 = s.h * Math.PI / 180, RR = DR - 40;
+        const large = Math.abs(e) > 180 ? 1 : 0;
+        errArc.setAttribute('d', 'M' + DCX + ' ' + DCY + ' L' + (DCX + Math.sin(r0) * RR).toFixed(1) + ' ' + (DCY - Math.cos(r0) * RR).toFixed(1) +
+          ' A' + RR + ' ' + RR + ' 0 ' + large + ' ' + (e > 0 ? 1 : 0) + ' ' + (DCX + Math.sin(r1) * RR).toFixed(1) + ' ' + (DCY - Math.cos(r1) * RR).toFixed(1) + ' Z');
+      } else errArc.setAttribute('d', '');
+      txCalc.textContent = t('gy_calc') + ': ' + deg(wrap180(s.h));
+      txReal.textContent = t('gy_real') + ': ' + deg(wrap180(s.th));
+      fastBadge.textContent = s.t < s.fastUntil ? t('gy_fast') : '';
+      /* curve */
+      const t0 = Math.max(0, s.t - GY.T);
+      const xs = (tt) => X0 + (tt - t0) / GY.T * (X1 - X0);
+      const ys = (y) => CYc - clamp(y, -70, 70) * KY;
+      let pts = '';
+      for (const p of s.hist) if (p[0] >= t0) pts += xs(p[0]).toFixed(1) + ',' + ys(p[1]).toFixed(1) + ' ';
+      cLine.setAttribute('points', pts + xs(s.t).toFixed(1) + ',' + ys(e).toFixed(1));
+      cDot.setAttribute('cx', xs(s.t)); cDot.setAttribute('cy', ys(e));
+      let tk = '';
+      for (let k = Math.ceil(t0 / 10) * 10; k <= t0 + GY.T + 1e-6; k += 10) {
+        const x = xs(k).toFixed(1);
+        tk += '<line class="sc-grid" x1="' + x + '" x2="' + x + '" y1="40" y2="184"/><text class="sc-lbl" x="' + x + '" y="193" text-anchor="middle">' + k + ' s</text>';
+      }
+      ticksG.innerHTML = tk;
+      /* side */
+      q('.gy-rate-v').textContent = (s.cmd > 0 && !s.turn ? '+' : '') + (s.turn ? '' : nf(+q('.gy-rate').value, 0) + ' \u00b0/s');
+      q('.gy-bias-v').textContent = nf(s.bias, 1) + ' \u00b0/s';
+      q('.gy-calstate').textContent = s.calOk ? '\u2713 ' + t('gy_calib') + ' (' + nf(s.est, 2) + ' \u00b0/s)' : t('gy_uncal');
+      q('.gy-calstate').className = 'gy-calstate' + (s.calOk ? ' ok' : '');
+      q('.gy-h').textContent = deg(wrap180(s.h));
+      q('.gy-th').textContent = deg(wrap180(s.th));
+      q('.gy-e').textContent = deg(e);
+      const j = judge();
+      verdict = j[1];
+      const stEl = q('.gy-status');
+      stEl.className = 'status gy-status' + (j[0] ? ' ' + j[0] : '');
+      stEl.textContent = t(j[1], j[2]);
+      stEl.dataset.state = j[1];
+      const b = s.bias;
+      q('.gy-calc').innerHTML = [t('gy_c1'), t('gy_c2'), t('gy_c3', { b: nf(b, 1), d: nf(b * 60, 0) }), t('gy_c4')]
+        .map((x, i) => '<li data-n="' + (i + 1) + '"' + ((i === 2 && verdict === 'gy_st_drift') || (i === 3 && s.calOk) ? ' class="hot"' : '') + '>' + esc(x) + '</li>').join('');
+    }
+
+    /* every user action: clear the last event message, run the action;
+       with reduced motion, jump to its result straight away */
+    function act(fn, rmSec) {
+      ev = null; moved = true;
+      fn();
+      if (RM && rmSec) settle(rmSec);
+      draw();
+    }
+    function settle(sec) {
+      gyAdvance(s, sec);
+      after();
+    }
+    function after() {
+      if (s.calFail) { s.calFail = false; ev = 'gy_st_calMove'; evVars = {}; }
+      if (s.calDone) { s.calDone = false; ev = 'gy_st_calDone'; evVars = { b: nf(s.est, 2) }; }
+      if (s.turn && s.turn.done && !s.turn.told) {
+        s.turn.told = true;
+        const real = s.turn.th1 - s.turn.th0;
+        ev = 'gy_st_turnDone'; evVars = { r: nf(Math.abs(real), 1) + '\u00b0', raw: Math.abs(real) - 90 };
+      }
+    }
+    function setRate(v) {
+      q('.gy-rate').value = v;
+      s.turn = null; s.cmd = +v;
+    }
+    function turn(dir) {
+      setRate(0);
+      s.turn = { dir, target: s.h + 90 * dir, th0: s.th };
+    }
+    function calibrate() {
+      if (Math.abs(s.w) > 0.3 || s.cmd !== 0) { s.calib = null; ev = 'gy_st_calMove'; evVars = {}; return; }
+      s.calib = { sum: 0, n: 0 };
+    }
+    function zero() { s.th = 0; s.h = 0; s.hist = [[s.t, 0]]; }
+    function drift() {
+      const keepBias = s.bias;
+      s = gyNew(keepBias);
+      setRate(0);
+      s.fastUntil = 30;
+    }
+    function wait() {
+      setRate(0); s.w = 0; s.calib = null;
+      const h0 = s.h;
+      gyAdvance(s, 60);
+      const d = s.h - h0;
+      ev = 'gy_st_waited'; evVars = { e: deg(d, 0), raw: d };
+    }
+
+    q('.gy-rate').value = 0;
+    q('.gy-bias').value = s.bias;
+    q('.gy-rate').addEventListener('input', (e) => act(() => setRate(+e.target.value), 1.2));
+    q('.gy-bias').addEventListener('input', (e) => act(() => { s.bias = +e.target.value; }, 0));
+    q('.gy-turnR').addEventListener('click', () => act(() => turn(1), 5));
+    q('.gy-turnL').addEventListener('click', () => act(() => turn(-1), 5));
+    q('.gy-stop').addEventListener('click', () => act(() => setRate(0), 1));
+    q('.gy-cal').addEventListener('click', () => act(calibrate, 1.2));
+    q('.gy-zero').addEventListener('click', () => act(zero, 0));
+    q('.gy-drift').addEventListener('click', () => act(drift, 30));
+    q('.gy-wait').addEventListener('click', () => act(wait, 0));
+    sh.relabel();
+    draw();
+
+    function frame(dt) {
+      const k = s.t < s.fastUntil ? GY.fast : 1;
+      gyAdvance(s, dt * k);
+      after();
+      draw();
+    }
+    return {
+      kind: 'topic', id: 'gyro', frame,
+      relabel: () => { sh.relabel(); draw(); },
+      demo: (sec) => { setRate(0); gyAdvance(s, sec); draw(); },
+      api: {
+        get s() { return s; },
+        setRate: (v) => act(() => setRate(v), 0),
+        setBias: (b) => { s.bias = b; q('.gy-bias').value = b; draw(); },
+        turn: (dir) => act(() => turn(dir), 0),
+        calibrate: () => act(calibrate, 0),
+        drift: () => act(drift, 0),
+        wait: () => act(wait, 0),
+        zero: () => act(zero, 0),
+        advance: (sec) => { settle(sec); draw(); },
+        needle: () => +needle.dataset.angle,
+        status: () => verdict,
+        click: (cls) => q(cls).click(),
+      },
+    };
+  }
+
+  /* ======================================================================
+   * 7. Variables and counters - the editor's own blocks, run step by step
+   *
+   * The labels come from the editor (code-data.js, RRData) when it is
+   * loaded, so they read exactly like the blocks in RatRocket Code. The run
+   * follows code.js: "wiederhole bis" checks before every round.
+   * ==================================================================== */
+  const VA = { cells: 8, budget: 60, tick: 0.55 };
+  const VAP = {
+    1: () => [{ t: 'setVar', n: 0 }, { t: 'move' }, { t: 'changeVar', n: 1 }, { t: 'move' }, { t: 'changeVar', n: 1 },
+      { t: 'move' }, { t: 'changeVar', n: 1 }, { t: 'showVar' }],
+    2: (c) => [{ t: 'setVar', n: 0 }, { t: 'repeatUntil', cond: { op: c.op, n: c.n }, body: [{ t: 'move' }, { t: 'changeVar', n: c.d }] }, { t: 'showVar' }],
+  };
+  const VA_CAT = { move: 'move', setVar: 'var', changeVar: 'var', showVar: 'var', repeatUntil: 'loop' };
+  const minus = (n) => String(n).replace('-', '\u2212');
+
+  function viewVars(main, tp) {
+    const C = 96, OX = 66, OY = 70;
+    const cmp = { op: '=', n: 5, d: 1 };
+    let part = 1, prog = VAP[1](), gen = null, st = null, playing = false, acc = 0;
+    const vname = () => E('varSuggest')[0];
+
+    const sh = topicShell(main, tp, {
+      lead: 'va_lead', merk: 'va_merk',
+      main:
+        '<div class="stagebox"><div class="stage-cap">' + info('va_tipStage', true) + '</div>' +
+          '<svg class="va-stage" viewBox="0 0 900 240" role="img"></svg></div>' +
+        '<div class="stage-tools">' +
+          '<button class="btn btn-sm btn-go va-run" type="button">' + ICO.play + '<span class="va-run-l"></span></button>' +
+          '<button class="btn btn-sm va-step" type="button">' + ICO.step + '<span class="va-step-l"></span></button>' +
+          '<button class="btn btn-sm btn-ghost va-reset" type="button">' + ICO.again + '<span class="va-reset-l"></span></button>' +
+        '</div>' +
+        '<section class="panel va-panel"><div class="va-cols">' +
+          '<div><h2 class="panel-h"><span class="va-prog-t"></span>' + info('va_tipProg') + '</h2><div class="va-prog"></div></div>' +
+          '<div><div class="watch va-watch"><div class="watch-row"><span class="watch-title"><span class="va-watch-t"></span>' + info('ed:i_watch') + '</span>' +
+            '<span class="watch-list va-wlist"></span></div><div class="watch-log va-wlog" hidden></div></div></div>' +
+        '</div></section>',
+      side:
+        '<section class="panel">' +
+          '<div class="ctl"><div class="ctl-head"><span data-t="va_part"></span></div>' +
+          '<div class="seg seg-full va-parts"><button class="seg-btn" type="button" data-p="1" data-t="va_p1"></button><button class="seg-btn" type="button" data-p="2" data-t="va_p2"></button></div>' +
+          '<p class="ctl-hint va-hint" data-t="va_cmpHint"></p></div>' +
+        '</section>' +
+        '<div class="status va-status"></div>' +
+        '<div class="readouts">' +
+          '<div class="ro"><span data-t="va_cells"></span><b class="va-cells"></b></div>' +
+          '<div class="ro"><span data-t="va_checks"></span><b class="va-checks"></b></div>' +
+        '</div>',
+      tryItems: () => [
+        t('va_try1', { link: '<a href="code.html?level=8">' + esc(t('va_open')) + ' \u2192</a>' }),
+        t('va_try2', { where: code('WHERE') }),
+      ],
+    });
+    const q = sh.q;
+
+    /* ---- stage: a corridor of 8 cells, robot facing east ---- */
+    const svg = q('.va-stage');
+    sv('rect', { width: 900, height: 240, class: 'st-floor' }, svg);
+    sv('rect', { x: OX, y: OY, width: C * VA.cells, height: C, fill: '#1b2330' }, svg);
+    const stamps = [], cellNo = [];
+    for (let i = 0; i < VA.cells; i++) {
+      if (i) sv('line', { x1: OX + i * C, x2: OX + i * C, y1: OY, y2: OY + C, class: 'st-grid' }, svg);
+      cellNo.push(sv('text', { x: OX + i * C + C / 2, y: OY + C + 24, class: 'st-txt-s', 'text-anchor': 'middle' }, svg));
+      stamps.push(sv('text', { x: OX + i * C + C - 10, y: OY + 22, class: 'va-stamp', 'text-anchor': 'end' }, svg));
+    }
+    sv('rect', { x: OX, y: OY - 10, width: C * VA.cells, height: 10, class: 'st-wall' }, svg);
+    sv('rect', { x: OX, y: OY + C, width: C * VA.cells, height: 10, class: 'st-wall' }, svg);
+    sv('rect', { x: OX + C * VA.cells, y: OY - 10, width: 10, height: C + 20, class: 'st-wall' }, svg);
+    sv('rect', { x: OX - 10, y: OY - 10, width: 10, height: C + 20, class: 'st-wall' }, svg);
+    const bot = sv('use', { href: '#bot', style: 'transition:transform .35s cubic-bezier(.4,0,.25,1)' }, svg);
+    const bub = sv('g', { class: 'va-bub' }, svg);
+    const bubR = sv('rect', { height: 34, rx: 10, fill: '#fff' }, bub);
+    const bubP = sv('path', { fill: '#fff' }, bub);
+    const bubT = sv('text', { class: 'va-bubt', 'text-anchor': 'middle' }, bub);
+    const ouch = sv('text', { class: 'st-ouch', 'text-anchor': 'middle', y: OY - 22 }, svg);
+
+    function condText(c) { return vname() + ' ' + c.op + ' ' + minus(c.n); }
+    function label(b) {
+      const vs = '<span class="vb-var">' + esc(vname()) + '</span>';
+      const tpl = (k) => esc(E(k)).split('{v}').join(vs);
+      if (b.t === 'move') return esc(E('b_move'));
+      if (b.t === 'setVar') return tpl('b_setVar').replace('{n}', '<span class="vb-num">' + minus(b.n) + '</span>');
+      if (b.t === 'showVar') return tpl('b_showVar');
+      if (b.t === 'changeVar') {
+        const n = part === 2
+          ? '<select class="cond va-d" aria-label="' + esc(E('numLabel')) + '">' + [1, 2, -1].map((v) => '<option value="' + v + '"' + (v === b.n ? ' selected' : '') + '>' + minus(v) + '</option>').join('') + '</select>'
+          : '<span class="vb-num">' + minus(b.n) + '</span>';
+        return tpl('b_changeVar').replace('{n}', n);
+      }
+      if (b.t === 'repeatUntil') {
+        const c = '<span class="cond-pill">' + vs + ' <select class="cond cond-op va-op" aria-label="=, >, <">' +
+          ['=', '>', '<'].map((o) => '<option' + (o === b.cond.op ? ' selected' : '') + '>' + esc(o) + '</option>').join('') + '</select> ' +
+          '<input class="num-in va-n" type="number" min="0" max="9" step="1" value="' + b.cond.n + '" aria-label="' + esc(E('numLabel')) + '"></span>';
+        return esc(E('b_repeatUntil')).replace('{c}', c);
+      }
+      return '';
+    }
+    function blockHtml(b, path) {
+      const kind = BLK[b.t] || {};
+      const head = '<div class="row"><span class="glyph">' + esc(kind.glyph || '') + '</span><span class="lbl">' + label(b) + '</span></div>';
+      if (b.body) {
+        return '<div class="vb cat-' + VA_CAT[b.t] + ' has-body" data-path="' + path + '">' + head +
+          '<div class="arm"><div class="belly">' + b.body.map((c, i) => blockHtml(c, path + '.' + i)).join('') + '</div></div><div class="foot"></div></div>';
+      }
+      return '<div class="vb cat-' + VA_CAT[b.t] + '" data-path="' + path + '">' + head + '</div>';
+    }
+    function renderProg() {
+      q('.va-prog').innerHTML = prog.map((b, i) => blockHtml(b, String(i))).join('');
+      const op = q('.va-op'), n = q('.va-n'), d = q('.va-d');
+      if (op) op.addEventListener('change', () => { cmp.op = op.value; rebuild(); });
+      if (n) n.addEventListener('change', () => { cmp.n = clamp(Math.round(+n.value || 0), 0, 9); rebuild(); });
+      if (d) d.addEventListener('change', () => { cmp.d = +d.value; rebuild(); });
+    }
+    function rebuild() {
+      prog = part === 1 ? VAP[1]() : VAP[2](cmp);
+      renderProg(); reset();
+    }
+
+    /* ---- interpreter (same order of actions as code.js) ---- */
+    function* runList(list, pre) {
+      for (let i = 0; i < list.length; i++) {
+        const b = list[i], p = (pre ? pre + '.' : '') + i;
+        if (b.t === 'repeatUntil') {
+          for (;;) {
+            yield { k: 'check', p, b };
+            if (st.lastCheck) break;
+            yield* runList(b.body, p);
+          }
+        } else yield { k: b.t, p, b };
+      }
+    }
+    function newState() {
+      return { val: 0, x: 0, cells: 0, checks: 0, shown: [], last: null, bump: false, cur: null, lastCheck: false,
+        zero: false, done: false, fail: null, n: 0, msg: 'va_st_ready', mv: {}, stamps: [] };
+    }
+    function reset() {
+      st = newState(); gen = runList(prog, ''); playing = false; acc = 0;
+      draw();
+    }
+    function cmpTrue(a, c) { return c.op === '>' ? a > c.n : c.op === '<' ? a < c.n : a === c.n; }
+    function stepOnce() {
+      if (st.done || st.fail) return false;
+      st.bump = false;
+      const r = gen.next();
+      if (r.done) {
+        st.done = true; st.cur = null; playing = false;
+        st.msg = st.zero ? 'va_st_zero' : 'va_st_done';
+        st.mv = { n: st.cells, v: vname(), k: minus(st.val), c: condText(cmp) };
+        draw();
+        return false;
+      }
+      const a = r.value, v = vname();
+      st.cur = a.p;
+      if (++st.n > VA.budget) { st.fail = 'failedLong'; st.msg = 'failedLong'; playing = false; draw(); return false; }
+      if (a.k === 'move') {
+        if (st.x >= VA.cells - 1) { st.fail = 'failedWall'; st.msg = 'failedWall'; playing = false; draw(); return false; }
+        st.x++; st.cells++; st.msg = 'va_st_move'; st.mv = {};
+      } else if (a.k === 'setVar') {
+        if (st.val !== a.b.n) { st.last = v; st.bump = true; }
+        st.val = a.b.n; st.last = v; st.msg = 'va_st_set'; st.mv = { v, n: minus(a.b.n) };
+      } else if (a.k === 'changeVar') {
+        const old = st.val;
+        st.val += a.b.n; st.last = v; st.bump = st.val !== old;
+        st.stamps.push([st.x, st.val]);
+        st.msg = 'va_st_change'; st.mv = { v, a: minus(old), b: minus(st.val) };
+      } else if (a.k === 'showVar') {
+        st.shown.push(st.val); st.msg = 'va_st_show'; st.mv = { v, n: minus(st.val) };
+      } else if (a.k === 'check') {
+        st.checks++;
+        st.lastCheck = cmpTrue(st.val, a.b.cond);
+        if (st.lastCheck && st.checks === 1) st.zero = true;
+        st.msg = 'va_st_check'; st.mv = { c: condText(a.b.cond), a: t(st.lastCheck ? 'va_yes' : 'va_no') };
+      }
+      draw();
+      return true;
+    }
+    function runAll() { let i = 0; while (stepOnce() && i < 500) i++; }
+
+    function draw() {
+      const x = OX + st.x * C + C / 2, y = OY + C / 2;
+      bot.style.transform = 'translate(' + x + 'px,' + y + 'px) rotate(90deg) scale(.6)';
+      for (let i = 0; i < VA.cells; i++) { cellNo[i].textContent = String(i); stamps[i].textContent = ''; }
+      st.stamps.forEach((s2) => { stamps[s2[0]].textContent = minus(s2[1]); });
+      const showing = st.msg === 'va_st_show' || ((st.done) && st.shown.length);
+      if (showing) {
+        const txt = vname() + ': ' + minus(st.shown[st.shown.length - 1]);
+        const w = 26 + txt.length * 10;
+        bubR.setAttribute('x', x - w / 2); bubR.setAttribute('y', OY - 52); bubR.setAttribute('width', w);
+        bubP.setAttribute('d', 'M' + (x - 8) + ' ' + (OY - 19) + ' L' + x + ' ' + (OY - 6) + ' L' + (x + 8) + ' ' + (OY - 19) + ' Z');
+        bubT.setAttribute('x', x); bubT.setAttribute('y', OY - 29); bubT.textContent = txt;
+        bub.style.display = '';
+      } else bub.style.display = 'none';
+      ouch.setAttribute('x', Math.min(x + 60, 820));
+      ouch.textContent = st.fail === 'failedWall' ? t('pid_ouch') : '';
+      /* program highlight */
+      q('.va-prog').querySelectorAll('.vb').forEach((b) => b.classList.toggle('running', b.dataset.path === st.cur && !st.done));
+      /* watch panel, as in the editor */
+      const v = vname();
+      q('.va-wlist').innerHTML = '<span class="wv' + (st.last === v ? ' is-new' : '') + (st.bump ? ' bump' : '') + '" data-var="' + esc(v) + '">' +
+        '<span class="wv-name">' + esc(v) + '</span><output class="wv-val">' + minus(st.val) + '</output></span>';
+      const log = q('.va-wlog');
+      log.hidden = !st.shown.length;
+      log.innerHTML = st.shown.length ? '<span class="wl-head">' + esc(E('shown')) + '</span>' +
+        st.shown.slice(-8).map((n) => '<span class="wl-item">' + esc(v) + ': ' + minus(n) + '</span>').join('') : '';
+      /* side */
+      q('.va-cells').textContent = st.cells;
+      q('.va-checks').textContent = part === 2 ? st.checks + '\u00d7' : '\u2013';
+      q('.va-hint').hidden = part !== 2;
+      main.querySelectorAll('.va-parts .seg-btn').forEach((b) => b.setAttribute('aria-pressed', String(+b.dataset.p === part)));
+      const s = q('.va-status');
+      const bad = st.fail || st.msg === 'va_st_zero';
+      s.className = 'status va-status' + (bad ? ' bad' : st.done ? ' ok' : '');
+      s.textContent = st.fail ? E(st.fail) : t(st.msg, Object.assign({ run: E('run'), step: E('step') }, st.mv));
+      s.dataset.state = st.fail || st.msg;
+      q('.va-run-l').textContent = playing ? t('pause') : E('run');
+      q('.va-step-l').textContent = E('step');
+      q('.va-reset-l').textContent = E('reset');
+      q('.va-prog-t').textContent = E('program');
+      q('.va-watch-t').textContent = E('watch');
+    }
+
+    q('.va-run').addEventListener('click', () => {
+      if (st.done || st.fail) reset();
+      if (RM) { runAll(); return; }
+      playing = !playing; acc = VA.tick; draw();
+    });
+    q('.va-step').addEventListener('click', () => { playing = false; if (st.done || st.fail) reset(); stepOnce(); });
+    q('.va-reset').addEventListener('click', reset);
+    main.querySelectorAll('.va-parts .seg-btn').forEach((b) => b.addEventListener('click', () => { part = +b.dataset.p; rebuild(); }));
+    sh.relabel();
+    rebuild();
+
+    function frame(dt) {
+      if (!playing) return;
+      acc += dt;
+      if (acc >= VA.tick) { acc = 0; stepOnce(); }
+    }
+    return {
+      kind: 'topic', id: 'variablen', frame,
+      relabel: () => { sh.relabel(); renderProg(); draw(); },
+      demo: () => { part = 2; rebuild(); for (let i = 0; i < 9; i++) stepOnce(); },
+      api: {
+        get st() { return st; },
+        part: (p) => { part = p; rebuild(); },
+        setCmp: (op, n, d) => { cmp.op = op; cmp.n = n; cmp.d = d == null ? 1 : d; part = 2; rebuild(); },
+        step: stepOnce, runAll, reset,
+        label: (i) => { const b = q('.va-prog').children[i]; return b ? b.querySelector('.lbl').textContent.replace(/\s+/g, ' ').trim() : ''; },
+        expect: (k, n) => E(k).split('{v}').join(vname()).replace('{n}', minus(n)),
+        watch: () => q('.va-wlist').textContent,
+        log: () => q('.va-wlog').textContent,
+        isNew: () => !!q('.va-wlist .wv.is-new'),
+        status: () => q('.va-status').dataset.state,
+      },
+    };
+  }
+
+  /* ======================================================================
    * Home: topic cards with small animated teasers
    * ==================================================================== */
   const VIG = {
@@ -1510,6 +2111,34 @@
       }
       return s + '<path d="M' + ox + ' ' + oy + 'h' + n * cs + 'v' + m * cs + 'h-' + n * cs + 'z M125 15 v50 M275 115 v50 M75 65 h50" fill="none" stroke="var(--board)" stroke-width="6" stroke-linecap="round"/></svg>';
     },
+    gyro: () =>
+      '<svg viewBox="0 0 400 180" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><rect width="400" height="180" class="st-floor"/>' +
+      '<g transform="translate(96 92)"><g class="vg-turn"><use href="#bot" transform="scale(.9)"/></g></g>' +
+      '<path d="M218 128 A72 72 0 0 1 362 128" fill="none" stroke="#2b3445" stroke-width="12"/>' +
+      '<g transform="translate(290 128)"><g class="vg-needle"><path d="M0 0 V-62" stroke="#fff" stroke-width="4" stroke-linecap="round"/></g><circle r="7" fill="var(--board)"/></g>' +
+      '<text x="290" y="160" text-anchor="middle" class="st-txt">\u00b0/s</text></svg>',
+    variablen: () => {
+      let s = '<svg viewBox="0 0 400 180" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><rect width="400" height="180" class="st-floor"/>' +
+        '<rect x="20" y="96" width="360" height="56" fill="#1b2330"/><rect x="20" y="90" width="360" height="6" class="st-wall"/><rect x="20" y="152" width="360" height="6" class="st-wall"/>' +
+        '<g><use href="#bot" transform="rotate(90) scale(.42)"/><animateMotion dur="5s" repeatCount="indefinite" calcMode="discrete" keyTimes="0;.2;.4;.6;.8" values="45,124;117,124;189,124;261,124;333,124"/></g>' +
+        '<rect x="120" y="22" width="160" height="44" rx="10" fill="#fff"/><rect x="120" y="22" width="104" height="44" rx="10" fill="#d8690b"/><rect x="200" y="22" width="24" height="44" fill="#d8690b"/>' +
+        '<text x="172" y="51" text-anchor="middle" style="font:600 18px var(--display);fill:#fff">' + esc(E('varSuggest')[0]) + '</text>';
+      for (let i = 0; i < 5; i++) {
+        s += '<text x="252" y="54" text-anchor="middle" opacity="' + (i ? 0 : 1) + '" style="font:600 24px var(--display);fill:var(--ink)">' + i +
+          '<animate attributeName="opacity" dur="5s" repeatCount="indefinite" calcMode="discrete" keyTimes="0;' + (i * 0.2).toFixed(1) + ';' + ((i + 1) * 0.2).toFixed(1) + '" values="0;1;0"/></text>';
+      }
+      return s + '</svg>';
+    },
+    print: () => {
+      let s = '<svg viewBox="0 0 400 180" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><rect width="400" height="180" fill="#5a6577"/>';
+      [[-8, 110, 30], [4, 170, 24], [-2, 232, 34]].forEach((p, i) => {
+        s += '<g transform="translate(' + p[1] + ' ' + p[2] + ') rotate(' + p[0] + ')" class="vg-float" style="--dl:' + (i * 0.5) + 's"><rect width="96" height="136" rx="3" fill="#fff"/>' +
+          '<rect x="10" y="12" width="60" height="7" rx="3" fill="#19212e"/><rect x="10" y="26" width="76" height="4" rx="2" fill="#c3cbd8"/><rect x="10" y="34" width="70" height="4" rx="2" fill="#c3cbd8"/>' +
+          (i === 1 ? '<path d="M14 52 h68 v68 h-68 z M37 52 v68 M60 52 v68 M14 75 h68 M14 98 h68" fill="none" stroke="#19212e" stroke-width="1.6"/>' :
+            '<path d="M14 54 h68 M14 70 h68 M14 86 h68 M14 102 h50" stroke="#c3cbd8" stroke-width="3"/><rect x="58" y="108" width="24" height="18" rx="3" fill="var(--board)"/>') + '</g>';
+      });
+      return s + '</svg>';
+    },
     lex: () => {
       const words = ['PWM', 'H-Br\u00fccke', 'Encoder', 'UART', 'Totzone', 'LED', 'Bootloader', 'Flood-Fill', 'IMU'];
       const pos = [[24, 34], [118, 22], [250, 30], [40, 88], [150, 80], [290, 84], [60, 138], [196, 132], [318, 140]];
@@ -1537,6 +2166,10 @@
     lx.className = 'tcard tcard-lex'; lx.href = '#lexikon'; lx.dataset.topic = 'lexikon';
     lx.innerHTML = '<div class="vig">' + VIG.lex() + '</div><div class="tcard-body"><div class="tcard-top"><span class="num">A</span><span class="tag">' + LEX.length + '</span></div><h2></h2><p></p><span class="cta"></span></div>';
     cards.append(lx);
+    const pc = document.createElement('a');
+    pc.className = 'tcard tcard-print'; pc.href = 'print/index.html'; pc.dataset.topic = 'print';
+    pc.innerHTML = '<div class="vig">' + VIG.print() + '</div><div class="tcard-body"><div class="tcard-top"><span class="num">\u2399</span><span class="tag">A4</span></div><h2></h2><p></p><span class="cta"></span></div>';
+    cards.append(pc);
     /* the trail is revealed exactly as fast as the robot drives along it */
     const trail = main.querySelector('.vg-pid-trail');
     if (trail && trail.getTotalLength) {
@@ -1555,6 +2188,10 @@
           a.querySelector('h2').textContent = L(tp.title);
           a.querySelector('p').textContent = L(tp.sub);
           a.querySelector('.cta').textContent = t('go') + ' \u2192';
+        } else if (a.dataset.topic === 'print') {
+          a.querySelector('h2').textContent = t('printCardTitle');
+          a.querySelector('p').textContent = t('printCardSub');
+          a.querySelector('.cta').textContent = t('printCardGo') + ' \u2192';
         } else {
           a.querySelector('h2').textContent = t('lexCardTitle');
           a.querySelector('p').textContent = t('lexCardSub', { n: LEX.length });
@@ -1686,6 +2323,77 @@
       upd();
       return upd;
     },
+    /* the editor's three variable blocks on one note */
+    var(card, svg, row, out) {
+      let n = 0, shown = false;
+      const vn = () => E('varSuggest')[0];
+      const lbl = (k, num) => E(k).split('{v}').join(vn()).replace('{n}', num);
+      row.innerHTML = '<button class="tog tog-v" type="button" data-a="set"></button><button class="tog tog-v" type="button" data-a="change"></button><button class="tog tog-v" type="button" data-a="show"></button>';
+      function upd(bump) {
+        row.querySelector('[data-a="set"]').textContent = '= ' + lbl('b_setVar', '0');
+        row.querySelector('[data-a="change"]').textContent = '\u00b1 ' + lbl('b_changeVar', '1');
+        row.querySelector('[data-a="show"]').textContent = '\u25c9 ' + lbl('b_showVar');
+        const val = svg.querySelector('.lx-val');
+        val.textContent = String(n);
+        svg.querySelector('.lx-vname').textContent = vn();
+        if (bump) { val.classList.remove('bump'); void val.getBBox(); val.classList.add('bump'); }
+        out.textContent = shown ? t('var_shown', { v: vn(), n }) : t('var_out', { v: vn(), n });
+        out.dataset.state = String(n);
+      }
+      row.querySelectorAll('.tog').forEach((b) => b.addEventListener('click', () => {
+        const a = b.dataset.a;
+        shown = a === 'show';
+        if (a === 'set') n = 0;
+        if (a === 'change') n++;
+        upd(a !== 'show');
+      }));
+      upd();
+      return () => upd();
+    },
+    /* update mode: UPDATE (or reset twice) -> RATROCKET drive -> copy the file */
+    uf2(card, svg, row, out) {
+      let s = 'run';
+      row.innerHTML = '<button class="tog tog-c" type="button" data-a="up"></button><button class="tog" type="button" data-a="copy"></button>';
+      function upd(msg) {
+        svg.dataset.uf = s;
+        row.querySelector('[data-a="up"]').textContent = t('uf2_update');
+        row.querySelector('[data-a="copy"]').textContent = t('uf2_copy');
+        row.querySelectorAll('.tog').forEach((b) => b.setAttribute('aria-pressed', String((b.dataset.a === 'up' && s === 'drive') || (b.dataset.a === 'copy' && s === 'done'))));
+        out.textContent = t(msg || ('uf2_' + s));
+        out.dataset.state = msg ? 'need' : s;
+      }
+      row.querySelector('[data-a="up"]').addEventListener('click', () => { s = 'drive'; upd(); });
+      row.querySelector('[data-a="copy"]').addEventListener('click', () => { if (s === 'drive') { s = 'done'; upd(); } else upd('uf2_need'); });
+      upd();
+      return () => upd();
+    },
+    /* the D-pad of drive.html and the commands it sends (firmware.md) */
+    dpad(card, svg, row, out) {
+      const P = { x: 160, y: 62, a: 0 };
+      const K = [['up', '\u25b2', 'FWD 160', 'FWD done'], ['left', '\u25c0', 'TURN -90', 'TURN done'], ['right', '\u25b6', 'TURN 90', 'TURN done'], ['stop', '\u25a0', 'STOP', '']];
+      let last = null;
+      row.innerHTML = K.map((k) => '<button class="tog tog-c" type="button" data-k="' + k[0] + '" aria-label="' + k[2] + '">' + k[1] + '</button>').join('');
+      const g = svg.querySelector('.dp-bot');
+      function upd() {
+        g.style.transform = 'translate(' + P.x + 'px,' + P.y + 'px) rotate(' + P.a + 'deg)';
+        if (!last) { out.textContent = t('dpad_ready'); out.dataset.state = ''; return; }
+        out.textContent = last[0] === 'stop' ? t('dpad_stop') : t('dpad_sent', { c: last[2].replace('-', '\u2212'), a: last[3] });
+        out.dataset.state = last[2];
+      }
+      row.querySelectorAll('.tog').forEach((b) => b.addEventListener('click', () => {
+        last = K.find((k) => k[0] === b.dataset.k);
+        if (last[0] === 'left') P.a -= 90;
+        if (last[0] === 'right') P.a += 90;
+        if (last[0] === 'up') {
+          const r = P.a * Math.PI / 180;
+          P.x += Math.round(Math.sin(r) * 18); P.y -= Math.round(Math.cos(r) * 18);
+          if (P.x < 124 || P.x > 192 || P.y < 22 || P.y > 96) { P.x = 160; P.y = 62; }
+        }
+        upd();
+      }));
+      upd();
+      return upd;
+    },
   };
 
   function viewLex(main, focusId) {
@@ -1720,7 +2428,8 @@
       }
     }
     function cardHtml(e) {
-      const tags = (e.status === 'planned' ? '<span class="lx-badge">' + esc(t('lex_planned')) + '</span>' : '') +
+      const badge = { planned: ['', 'lex_planned'], wip: [' wip', 'lex_wip'], connected: [' conn', 'lex_connected'] }[e.status];
+      const tags = (badge ? '<span class="lx-badge' + badge[0] + '">' + esc(t(badge[1])) + '</span>' : '') +
         (e.act ? '<span class="lx-try">' + esc(t('lex_try')) + '</span>' : '');
       const links = (e.topic ? '<a class="chip chip-exp" href="#' + e.topic + '">' + esc(t('lex_exp')) + ' \u2192</a>' : '') +
         (e.links || []).map((id) => {
@@ -1800,7 +2509,7 @@
   }
 
   /* ---------------- router ---------------- */
-  const VIEWS = { pid: viewPid, encoder: viewEncoder, pwm: viewPwm, ultraschall: viewUltra, floodfill: viewFlood };
+  const VIEWS = { pid: viewPid, encoder: viewEncoder, pwm: viewPwm, ultraschall: viewUltra, floodfill: viewFlood, gyro: viewGyro, variablen: viewVars };
   let view = null, routedHash = null;
   function route() {
     const h = decodeURIComponent(location.hash.replace(/^#/, ''));
@@ -1878,7 +2587,7 @@
     try {
       /* home */
       let v = await go('');
-      ok('home.cards', document.querySelectorAll('.tcard').length === TOPICS.length + 1 &&
+      ok('home.cards', document.querySelectorAll('.tcard').length === TOPICS.length + 2 && has('.tcard[href="print/index.html"]') &&
         TOPICS.every((tp) => has('.tcard[href="#' + tp.id + '"] .vig svg')), document.querySelectorAll('.tcard').length + ' cards');
 
       /* 1 PID */
@@ -1987,6 +2696,63 @@
       const steps2 = F.walkAll();
       ok('ff.replanWalk', steps2 === d2[0][0] && F.st.dist[F.st.bot.x][F.st.bot.y] === 0, steps2 + ' steps');
 
+      /* 6 gyroscope */
+      v = await go('gyro');
+      const G = v.api;
+      ok('gyro.elements', has('.gy-rate') && has('.gy-cal') && has('.gy-turnR') && has('.gy-drift') && has('.gy-wait') && has('.gy-bias') &&
+        has('.gy-stage use') && has('.gy-curve .sc-line') && document.querySelectorAll('.gy-calc li').length === 4 && /H2/.test(document.querySelector('.tp-bridge').textContent));
+      G.setBias(GY.bias); G.drift(); G.zero();
+      const rot0 = document.querySelector('.gy-stage use').getAttribute('transform');
+      G.setRate(120); G.advance(1);
+      const wantNeedle = (120 + GY.bias) / GY.rMax * 90;
+      ok('gyro.needleFollowsRate', Math.abs(G.needle() - wantNeedle) < 2.5 && G.s.th > 90 && document.querySelector('.gy-stage use').getAttribute('transform') !== rot0,
+        'needle ' + G.needle().toFixed(1) + ' want ' + wantNeedle.toFixed(1) + ', turned ' + G.s.th.toFixed(0));
+      G.drift(); G.advance(30);
+      const e30 = G.s.h - G.s.th;
+      ok('gyro.driftGrows', Math.abs(e30 - GY.bias * 30) < 1.5 && G.status() === 'gy_st_drift' && Math.abs(G.s.th) < 0.01, 'error after 30 s ' + e30.toFixed(1) + ' deg');
+      G.setRate(60); G.advance(0.5); G.calibrate(); G.advance(1.2);
+      ok('gyro.calNeedsRest', G.s.est === 0 && !G.s.calOk && G.status() === 'gy_st_calMove', G.status());
+      G.setRate(0); G.advance(1); G.calibrate(); G.advance(1.2);
+      const est = G.s.est;
+      G.zero(); G.advance(30);
+      ok('gyro.calibrationStopsDrift', Math.abs(est - GY.bias) < 0.05 && G.s.calOk && Math.abs(G.s.h - G.s.th) < 0.5,
+        'bias ' + est.toFixed(3) + ', error after 30 s ' + (G.s.h - G.s.th).toFixed(2));
+      G.zero(); G.turn(1); G.advance(4);
+      ok('gyro.turn90', Math.abs(G.s.h - 90) < 0.5 && Math.abs(G.s.th - 90) < 0.8 && G.status() === 'gy_st_turnDone', 'computed ' + G.s.h.toFixed(2) + ', real ' + G.s.th.toFixed(2));
+      G.drift(); G.zero(); G.turn(1); G.advance(4);
+      const tu = G.s.turn;
+      ok('gyro.uncalibratedTurnOff', tu.done && Math.abs(tu.h1 - 90) < 0.5 && tu.th1 - 90 > 2 && G.status() === 'gy_st_turnDone' &&
+        document.querySelector('.gy-status').classList.contains('bad'), 'computed ' + tu.h1.toFixed(1) + ', real ' + tu.th1.toFixed(1));
+      G.drift(); G.wait();
+      ok('gyro.waitMinute', G.status() === 'gy_st_waited' && Math.abs(G.s.h - G.s.th - GY.bias * 60) < 2, (G.s.h - G.s.th).toFixed(0) + ' deg');
+
+      /* 7 variables */
+      v = await go('variablen');
+      const V = v.api;
+      ok('var.elements', document.querySelectorAll('.va-prog .vb').length === 8 && has('.va-watch .wv') && document.querySelectorAll('.va-parts .seg-btn').length === 2 &&
+        has('.va-stage use') && has('.va-run') && has('.va-step'));
+      const edOk = !!window.RRData && V.label(0) === V.expect('b_setVar', 0) && V.label(1) === edText('b_move') && V.label(2) === V.expect('b_changeVar', 1) && V.label(7) === V.expect('b_showVar');
+      ok('var.editorBlocks', edOk, window.RRData ? V.label(0) + ' | ' + V.label(2) + ' | ' + V.label(7) : 'code-data.js not loaded');
+      V.reset(); V.step(); V.step(); V.step();
+      ok('var.watchGold', V.st.val === 1 && V.isNew() && /1/.test(V.watch()) && V.st.x === 1 && V.status() === 'va_st_change', V.watch());
+      V.runAll();
+      ok('var.counter', V.st.val === 3 && V.st.x === 3 && V.st.shown.join() === '3' && V.status() === 'va_st_done' && V.log().indexOf(edText('varSuggest')[0] + ': 3') >= 0, V.log());
+      V.setCmp('=', 5, 1);
+      const p2 = document.querySelectorAll('.va-prog > .vb').length === 3 && has('.va-prog .vb.has-body .belly .vb') && has('.va-op') && has('.va-n');
+      V.runAll();
+      ok('var.untilEquals5', p2 && V.st.x === 5 && V.st.val === 5 && V.st.checks === 6 && V.status() === 'va_st_done', 'x ' + V.st.x + ', checks ' + V.st.checks);
+      V.setCmp('>', 3, 1); V.runAll();
+      ok('var.untilGreater3', V.st.x === 4 && V.st.val === 4, 'x ' + V.st.x);
+      V.setCmp('<', 5, 1); V.runAll();
+      ok('var.lessThanStopsAtOnce', V.st.x === 0 && V.st.checks === 1 && V.status() === 'va_st_zero', V.status());
+      V.setCmp('=', 5, 2); V.runAll();
+      ok('var.neverEquals5', V.st.fail === 'failedWall' && V.st.x === VA.cells - 1 && V.st.val === 14, 'x ' + V.st.x + ', val ' + V.st.val);
+      const opSel = document.querySelector('.va-op');
+      opSel.value = '>'; opSel.dispatchEvent(new Event('change'));
+      const nIn = document.querySelector('.va-n'); nIn.value = 2; nIn.dispatchEvent(new Event('change'));
+      V.runAll();
+      ok('var.controlsInBlock', V.st.x === 2 && document.querySelector('.va-op').value === '>', 'x ' + V.st.x);
+
       /* Lexikon */
       v = await go('lexikon');
       const X = v.api;
@@ -2034,6 +2800,44 @@
       ok('lex.hbridgeTruthTable', hbRes.length === 0 && hbState(1, 0) === 'cw' && hbState(0, 1) === 'ccw' && hbState(0, 0) === 'coast' && hbState(1, 1) === 'brake', hbRes.join(' ') || '10 cw, 01 ccw, 00 coast, 11 brake');
       const dipC = document.getElementById('lx-dip');
       ok('lex.dip', /Labyrinth|maze/.test(dipC.querySelector('.lx-out').textContent));
+      /* new Lexikon words */
+      const NEW = ['liste', 'funktion', 'karte', 'dipmodi', 'fernsteuerung'];
+      const missingNew = NEW.filter((id) => {
+        const e = LEX.find((x) => x.id === id);
+        const c = document.getElementById('lx-' + id);
+        return !e || !e.term.de || !e.term.en || !e.text.en || !e.where.en || !c || !c.querySelector('.lx-fig svg.lxs') || c.querySelector('.lx-fig svg').childElementCount < 2;
+      });
+      ok('lex.newEntries', missingNew.length === 0, missingNew.join(',') || NEW.join(', '));
+      const imu = LEX.find((e) => e.id === 'imu');
+      const imuC = document.getElementById('lx-imu');
+      ok('lex.gyroConnected', imu.status === 'connected' && imu.topic === 'gyro' && /H2/.test(imu.where.de) && /in Arbeit/.test(imu.where.de) &&
+        /angeschlossen|connected/.test(imuC.querySelector('.lx-badge').textContent) && !/geplant|planned/.test(imuC.textContent));
+      const dm = window.RLData.DIPMODES;
+      const dmC = document.getElementById('lx-dipmodi');
+      ok('lex.dipModesTable', dm.map((m) => m.sw.join('')).join() === '000,100,010,110,001' && dmC.querySelectorAll('.lx-dmn').length === 5 &&
+        /Labyrinth|Maze/.test(dmC.querySelectorAll('.lx-dmn')[4].textContent));
+      const varC = document.getElementById('lx-variable');
+      const vb = (a) => varC.querySelector('.tog[data-a="' + a + '"]').click();
+      vb('set'); vb('change'); vb('change');
+      const v2 = varC.querySelector('.lx-val').textContent;
+      vb('show');
+      const shownTxt = varC.querySelector('.lx-out').textContent;
+      vb('set');
+      ok('lex.variableInteractive', v2 === '2' && /2/.test(shownTxt) && varC.querySelector('.lx-val').textContent === '0' &&
+        varC.querySelector('.tog[data-a="change"]').textContent.indexOf(edText('b_changeVar').split(' ')[0]) >= 0, v2 + ' / ' + shownTxt);
+      const ufC = document.getElementById('lx-bootloader');
+      const ufS = ufC.querySelector('svg.lxs');
+      ufC.querySelector('.tog[data-a="copy"]').click();
+      const ufNeed = ufC.querySelector('.lx-out').dataset.state;
+      ufC.querySelector('.tog[data-a="up"]').click();
+      const ufDrive = ufS.dataset.uf;
+      ufC.querySelector('.tog[data-a="copy"]').click();
+      ok('lex.uf2Steps', ufNeed === 'need' && ufDrive === 'drive' && ufS.dataset.uf === 'done' && /RATROCKET/.test(ufC.textContent), ufNeed + ' ' + ufDrive + ' ' + ufS.dataset.uf);
+      const dpC = document.getElementById('lx-fernsteuerung');
+      dpC.querySelector('.tog[data-k="up"]').click();
+      const dp1 = dpC.querySelector('.lx-out').dataset.state;
+      dpC.querySelector('.tog[data-k="right"]').click();
+      ok('lex.remoteCommands', dp1 === 'FWD 160' && dpC.querySelector('.lx-out').dataset.state === 'TURN 90' && /rotate\(90deg\)/.test(dpC.querySelector('.dp-bot').style.transform), dp1);
       /* deep link */
       v = await go('lexikon/totzone');
       await sleep(60);
@@ -2044,6 +2848,31 @@
       const nVis = document.querySelectorAll('.lx:not([hidden])').length;
       ok('lex.categoryLink', nVis === LEX.filter((e) => e.cat === 'motor').length && document.querySelector('.lex-cats .pill[data-c="motor"]').getAttribute('aria-pressed') === 'true', nVis + ' motor entries');
       lexState.cat = 'all';
+
+      /* worksheets: every link on print/index.html opens a sheet of 1-2 pages.
+         Each print page reports itself to its parent (print/print.js). */
+      const msgs = [];
+      const onMsg = (e) => { if (e.data && e.data.rrPrint) msgs.push(e.data); };
+      window.addEventListener('message', onMsg);
+      const ifr = [];
+      const frame = (src) => {
+        const f = document.createElement('iframe');
+        f.style.cssText = 'position:absolute;left:-9999px;top:0;width:800px;height:600px;visibility:hidden';
+        f.src = src; document.body.appendChild(f); ifr.push(f);
+      };
+      const until = async (cond, ms) => { const t0 = performance.now(); while (!cond() && performance.now() - t0 < ms) await sleep(50); return cond(); };
+      frame('print/index.html');
+      await until(() => msgs.some((m) => m.rrPrint === 'index'), 5000);
+      const idx = msgs.find((m) => m.rrPrint === 'index');
+      const links = idx ? idx.links : [];
+      links.forEach((l) => frame('print/' + l));
+      await until(() => msgs.filter((m) => m.rrPrint === 'sheet').length >= links.length, 9000);
+      const sheets = msgs.filter((m) => m.rrPrint === 'sheet');
+      const bad = links.filter((l) => { const m = sheets.find((s) => s.file === l.split('/').pop()); return !m || m.pages < 1 || m.pages > 2; });
+      ok('print.indexLinks', !!idx && links.length >= 10 && bad.length === 0, (idx ? links.length + ' sheets' : 'index did not answer') + (bad.length ? ', broken: ' + bad.join(',') : ''));
+      ok('print.linkedFromPage', has('#tabPrint[href="print/index.html"]') && links.some((l) => /zahlenflut/.test(l)));
+      ifr.forEach((f) => f.remove());
+      window.removeEventListener('message', onMsg);
 
       /* language */
       await go('pid');

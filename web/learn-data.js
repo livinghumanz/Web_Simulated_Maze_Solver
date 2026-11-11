@@ -33,7 +33,7 @@
       navLex: 'Lexikon',
       toEditor: 'Zum Editor',
       homeTitle: 'Wie funktioniert dein Roboter?',
-      homeLead: 'F\u00fcnf Experimente zum Ausprobieren. Schieb, klick und schau, was passiert.',
+      homeLead: 'Sieben Experimente zum Ausprobieren. Schieb, klick und schau, was passiert.',
       go: 'Ausprobieren',
       lexCardTitle: 'Lexikon',
       lexCardSub: '{n} Begriffe von Strom bis Flood-Fill. Jeder mit Bild.',
@@ -252,6 +252,100 @@
       dead_label: 'Kraft',
       cmd_pick: 'Tipp einen Befehl an:',
       cmd_example: '(Beispielwerte)',
+
+      navPrint: 'Arbeitsbl\u00e4tter',
+      wip: 'in Arbeit',
+      lex_wip: 'in Arbeit',
+      lex_connected: 'angeschlossen \u00b7 Regelung in Arbeit',
+      printCardTitle: 'Arbeitsbl\u00e4tter',
+      printCardSub: 'Zum Ausdrucken: Befehlskarten, Messtabellen, Labyrinthe, Turnierb\u00f6gen. A4, schwarz-wei\u00df.',
+      printCardGo: 'Zu den Bl\u00e4ttern',
+
+      /* ---- Gyroskop ---- */
+      gy_lead: 'Ein Gyroskop sp\u00fcrt, wie schnell sich der Roboter dreht. Z\u00e4hlt man dieses Tempo Millisekunde f\u00fcr Millisekunde zusammen, kennt er seinen Winkel \u2013 fast.',
+      gy_rate: 'Wie schnell dreht er?',
+      gy_rateHint: 'Plus hei\u00dft im Uhrzeigersinn, wie bei TURN. Der echte Roboter dreht sich mit etwa 60 \u00b0/s.',
+      gy_turnR: '90\u00b0 rechts',
+      gy_turnL: '90\u00b0 links',
+      gy_stop: 'Anhalten',
+      gy_cal: 'Kalibrieren',
+      gy_calHint: 'Dabei muss er stillstehen. Eine Sekunde lang misst er, was der Gyro in Ruhe meldet, und zieht das danach immer ab.',
+      gy_drift: 'Drift-Demo',
+      gy_zero: 'Winkel auf 0',
+      gy_wait: '1 Minute warten',
+      gy_biasOpen: 'Profi: Bias \u00e4ndern',
+      gy_bias: 'Wie falsch misst er in Ruhe?',
+      gy_biasHint: 'Dein MPU6050 meldete in Ruhe etwa \u22122 \u00b0/s um die Hochachse. Jeder Chip ist anders.',
+      gy_robot: 'Roboter von oben',
+      gy_rateL: 'Drehrate: was der Gyro misst',
+      gy_headL: 'Winkel',
+      gy_calc: 'gerechnet',
+      gy_real: 'wirklich',
+      gy_err: 'Fehler',
+      gy_curve: 'Gerechnet minus wirklich \u00fcber die Zeit',
+      gy_fast: 'Zeitraffer \u00d7 10',
+      gy_calib: 'kalibriert',
+      gy_uncal: 'nicht kalibriert',
+      gy_calState: 'Gyro',
+      gy_st_ready: 'Schieb den Regler: Er dreht sich, die Nadel zeigt die Drehrate.',
+      gy_st_turn: 'Er dreht sich. 500-mal pro Sekunde kommt Drehrate \u00d7 Zeit zum Winkel dazu.',
+      gy_st_still: 'Er steht still. Schau auf den gerechneten Winkel \u2026',
+      gy_st_drift: 'Drift! Er steht still, aber der gerechnete Winkel wandert: schon {e} falsch.',
+      gy_st_cal: 'Kalibriere \u2026 nicht bewegen!',
+      gy_st_calDone: 'Kalibriert: {b} \u00b0/s werden ab jetzt abgezogen. Nichts wandert mehr.',
+      gy_st_calMove: 'Halt ihn still! Kalibrieren geht nur in Ruhe.',
+      gy_st_turnDone: 'Gerechnet: 90\u00b0. Wirklich gedreht: {r}.',
+      gy_st_waited: 'Eine Minute stillgestanden \u2013 der gerechnete Winkel ist um {e} gewandert.',
+      gy_tipStage: 'Hier wird echt gerechnet: 500-mal pro Sekunde Drehrate \u00d7 0,002 s aufsummiert. Bias und ein wenig Rauschen sind dabei, wie beim echten Chip.',
+      gy_tipCurve: 'Die Linie zeigt den gerechneten minus den wirklichen Winkel. Ohne Kalibrieren w\u00e4chst sie immer weiter: Das ist Drift.',
+      gy_calcT: 'Der Rechenweg',
+      gy_c1: 'Winkel neu = Winkel + Drehrate \u00d7 0,002 s',
+      gy_c2: '500-mal pro Sekunde, immer weiter',
+      gy_c3: 'Bias {b} \u00b0/s \u00d7 60 s = {d}\u00b0 falsch',
+      gy_c4: 'Kalibriert: erst Drehrate \u2212 Bias, dann addieren',
+      gy_bridge: 'Am echten Roboter steckt ein MPU6050 auf Steckplatz H2 und antwortet. Kalibrieren in Ruhe und Drehen mit dem Gyro: Regelung in Arbeit.',
+      gy_merk: 'Der Gyro misst das Drehtempo, nicht den Winkel. Den Winkel z\u00e4hlt man zusammen \u2013 und ein kleiner Fehler w\u00e4chst dabei immer weiter. Darum: erst in Ruhe kalibrieren.',
+      gy_try1: 'Labyrinth-Modus (nur SW3 an): {imu} zeigt, ob der Gyro antwortet, und f\u00fcnf rohe Messwerte.',
+      gy_try2: 'Leg den Roboter ganz still hin und schick {imu}: Die Gyro-Werte sind trotzdem nicht 0. Das ist der Bias.',
+      gy_trySoon: 'Drehen mit dem Gyro: Regelung in Arbeit',
+
+      /* ---- Variablen ---- */
+      va_lead: 'Eine Variable ist ein Zettel mit Namen. Das Programm schreibt eine Zahl darauf, rechnet etwas dazu und liest sie vor. So z\u00e4hlt der Roboter mit \u2013 und wei\u00df, wann Schluss ist.',
+      va_part: 'Welches Programm?',
+      va_p1: '1 \u00b7 Mitz\u00e4hlen',
+      va_p2: '2 \u00b7 wiederhole bis',
+      va_tipProg: 'Genau die Bausteine aus dem Editor. Bei \u201ewiederhole bis\u201c kannst du Zeichen und Zahl \u00e4ndern, bei \u201e\u00e4ndere\u201c die Zahl.',
+      va_tipStage: 'Ein langer Gang mit 8 Feldern. Hinten ist eine Wand.',
+      va_st_ready: 'Dr\u00fcck \u201e{run}\u201c oder \u201e{step}\u201c.',
+      va_st_check: 'Pr\u00fcfen: {c}? {a}',
+      va_yes: 'Ja \u2013 Schluss.',
+      va_no: 'Nein \u2013 noch eine Runde.',
+      va_st_set: '{v} bekommt die Zahl {n}.',
+      va_st_change: '{v} war {a}, jetzt ist es {b}.',
+      va_st_move: 'Er f\u00e4hrt 1 Feld.',
+      va_st_show: 'zeige: {v} ist {n}.',
+      va_st_done: 'Fertig! {n} Felder gefahren, {v} = {k}.',
+      va_st_zero: 'Schon beim ersten Pr\u00fcfen war {c} wahr. Die Schleife lief kein einziges Mal!',
+      va_cells: 'Felder gefahren',
+      va_checks: 'Mal gepr\u00fcft',
+      va_cmpHint: 'Probier mal \u201e> 3\u201c, \u201e< 5\u201c \u2013 oder \u00e4ndere um 2.',
+      va_merk: 'setze schreibt eine Zahl auf den Zettel, \u00e4ndere rechnet etwas dazu, zeige liest vor. wiederhole bis pr\u00fcft vor jeder Runde: Ist es wahr, ist Schluss.',
+      va_try1: 'Im Editor: Aufgabe 8 \u201eZ\u00e4hl mit!\u201c und Aufgabe 9 \u201eGenau 5\u201c. {link}',
+      va_open: 'Aufgabe 8 \u00f6ffnen',
+      va_try2: 'Auch der Roboter merkt sich Zahlen: Im Labyrinth-Modus meldet {where} sein Feld x, y und seine Richtung.',
+
+      /* ---- Lexikon micro-interactions (new) ---- */
+      var_out: '{v} = {n}',
+      var_shown: 'zeige: {v} ist {n}',
+      uf2_update: 'UPDATE',
+      uf2_copy: 'ratrocket.uf2 kopieren',
+      uf2_run: 'Das Programm l\u00e4uft. Am PC ist der Roboter ein COM-Port.',
+      uf2_drive: 'Update-Modus: Das Laufwerk RATROCKET ist da, die blaue LED leuchtet.',
+      uf2_done: 'Kopiert! Etwa 2 s sp\u00e4ter verschwindet das Laufwerk, und das neue Programm startet.',
+      uf2_need: 'Erst UPDATE schicken oder Reset zweimal schnell dr\u00fccken.',
+      dpad_ready: 'Dr\u00fcck einen Knopf am Steuerkreuz.',
+      dpad_sent: 'Geschickt: {c} \u2192 Antwort: {a}',
+      dpad_stop: 'Geschickt: STOP \u2013 er h\u00e4lt sofort an, auch mitten in einer Fahrt.',
     },
 
     en: {
@@ -262,7 +356,7 @@
       navLex: 'Glossary',
       toEditor: 'To the editor',
       homeTitle: 'How does your robot work?',
-      homeLead: 'Five experiments to try. Slide, click and watch what happens.',
+      homeLead: 'Seven experiments to try. Slide, click and watch what happens.',
       go: 'Try it',
       lexCardTitle: 'Glossary',
       lexCardSub: '{n} words from current to flood fill. Each with a picture.',
@@ -475,6 +569,97 @@
       dead_label: 'power',
       cmd_pick: 'Tap a command:',
       cmd_example: '(example values)',
+
+      navPrint: 'Worksheets',
+      wip: 'in progress',
+      lex_wip: 'in progress',
+      lex_connected: 'connected \u00b7 control in progress',
+      printCardTitle: 'Worksheets',
+      printCardSub: 'To print: command cards, measuring tables, mazes, tournament sheets. A4, black and white.',
+      printCardGo: 'To the sheets',
+
+      gy_lead: 'A gyroscope feels how fast the robot is turning. Add that speed up millisecond by millisecond and the robot knows its angle \u2013 almost.',
+      gy_rate: 'How fast is it turning?',
+      gy_rateHint: 'Plus means clockwise, as with TURN. The real robot turns at about 60 \u00b0/s.',
+      gy_turnR: '90\u00b0 right',
+      gy_turnL: '90\u00b0 left',
+      gy_stop: 'Stop',
+      gy_cal: 'Calibrate',
+      gy_calHint: 'It must stand still for this. For one second it measures what the gyro reports at rest, and from then on subtracts it.',
+      gy_drift: 'Drift demo',
+      gy_zero: 'Angle to 0',
+      gy_wait: 'Wait 1 minute',
+      gy_biasOpen: 'Pro: change the bias',
+      gy_bias: 'How wrong is it at rest?',
+      gy_biasHint: 'Your MPU6050 reported about \u22122 \u00b0/s around the vertical axis at rest. Every chip is different.',
+      gy_robot: 'Robot from above',
+      gy_rateL: 'Turn rate: what the gyro measures',
+      gy_headL: 'Angle',
+      gy_calc: 'computed',
+      gy_real: 'real',
+      gy_err: 'Error',
+      gy_curve: 'Computed minus real over time',
+      gy_fast: 'Time-lapse \u00d7 10',
+      gy_calib: 'calibrated',
+      gy_uncal: 'not calibrated',
+      gy_calState: 'Gyro',
+      gy_st_ready: 'Move the slider: it turns, and the needle shows the turn rate.',
+      gy_st_turn: 'It is turning. 500 times a second, rate \u00d7 time is added to the angle.',
+      gy_st_still: 'It is standing still. Watch the computed angle \u2026',
+      gy_st_drift: 'Drift! It stands still, but the computed angle wanders: already {e} wrong.',
+      gy_st_cal: 'Calibrating \u2026 don\u2019t move!',
+      gy_st_calDone: 'Calibrated: {b} \u00b0/s is subtracted from now on. Nothing wanders any more.',
+      gy_st_calMove: 'Hold it still! Calibration only works at rest.',
+      gy_st_turnDone: 'Computed: 90\u00b0. Really turned: {r}.',
+      gy_st_waited: 'One minute standing still \u2013 the computed angle has wandered by {e}.',
+      gy_tipStage: 'This is computed for real: 500 times a second, rate \u00d7 0.002 s is added up. Bias and a little noise are included, as on the real chip.',
+      gy_tipCurve: 'The line shows the computed minus the real angle. Without calibration it keeps growing: that is drift.',
+      gy_calcT: 'How the maths works',
+      gy_c1: 'new angle = angle + rate \u00d7 0.002 s',
+      gy_c2: '500 times a second, on and on',
+      gy_c3: 'bias {b} \u00b0/s \u00d7 60 s = {d}\u00b0 wrong',
+      gy_c4: 'calibrated: rate \u2212 bias first, then add',
+      gy_bridge: 'On the real robot an MPU6050 sits on header H2 and answers. Calibrating at rest and turning with the gyro: control in progress.',
+      gy_merk: 'The gyro measures turning speed, not the angle. The angle is added up \u2013 and a small error keeps growing. So: calibrate at rest first.',
+      gy_try1: 'Maze mode (only SW3 on): {imu} shows whether the gyro answers, plus five raw readings.',
+      gy_try2: 'Put the robot down very still and send {imu}: the gyro values are still not 0. That is the bias.',
+      gy_trySoon: 'Turning with the gyro: control in progress',
+
+      va_lead: 'A variable is a note with a name. The program writes a number on it, adds to it and reads it out. That is how the robot counts along \u2013 and knows when to stop.',
+      va_part: 'Which program?',
+      va_p1: '1 \u00b7 Counting',
+      va_p2: '2 \u00b7 repeat until',
+      va_tipProg: 'Exactly the blocks from the editor. In \u201crepeat until\u201d you can change the sign and the number, in \u201cchange\u201d the number.',
+      va_tipStage: 'A long corridor of 8 cells. There is a wall at the end.',
+      va_st_ready: 'Press \u201c{run}\u201d or \u201c{step}\u201d.',
+      va_st_check: 'Check: {c}? {a}',
+      va_yes: 'Yes \u2013 stop.',
+      va_no: 'No \u2013 one more round.',
+      va_st_set: '{v} gets the number {n}.',
+      va_st_change: '{v} was {a}, now it is {b}.',
+      va_st_move: 'It drives 1 cell.',
+      va_st_show: 'show: {v} is {n}.',
+      va_st_done: 'Done! {n} cells driven, {v} = {k}.',
+      va_st_zero: 'At the very first check {c} was already true. The loop did not run once!',
+      va_cells: 'Cells driven',
+      va_checks: 'Times checked',
+      va_cmpHint: 'Try \u201c> 3\u201d, \u201c< 5\u201d \u2013 or change by 2.',
+      va_merk: 'set writes a number on the note, change adds to it, show reads it out. repeat until checks before every round: if it is true, the loop stops.',
+      va_try1: 'In the editor: task 8 \u201cCount along!\u201d and task 9 \u201cExactly 5\u201d. {link}',
+      va_open: 'Open task 8',
+      va_try2: 'The robot remembers numbers too: in maze mode {where} reports its cell x, y and its heading.',
+
+      var_out: '{v} = {n}',
+      var_shown: 'show: {v} is {n}',
+      uf2_update: 'UPDATE',
+      uf2_copy: 'copy ratrocket.uf2',
+      uf2_run: 'The program runs. On the PC the robot is a COM port.',
+      uf2_drive: 'Update mode: the RATROCKET drive is there, the blue LED is on.',
+      uf2_done: 'Copied! About 2 s later the drive disappears and the new program starts.',
+      uf2_need: 'First send UPDATE or press reset twice quickly.',
+      dpad_ready: 'Press a button on the D-pad.',
+      dpad_sent: 'Sent: {c} \u2192 answer: {a}',
+      dpad_stop: 'Sent: STOP \u2013 it stops at once, even in the middle of a move.',
     },
   };
 
@@ -499,7 +684,24 @@
     { id: 'floodfill', tag: { de: 'Planen', en: 'Planning' },
       title: { de: 'Flood-Fill \u2013 die Wasserwelle', en: 'Flood fill \u2013 the water wave' },
       sub: { de: 'Wie der Roboter den k\u00fcrzesten Weg plant.', en: 'How the robot plans the shortest way.' },
-      lex: ['algorithmus', 'rechtehand', 'variable', 'ultraschall'] },
+      lex: ['algorithmus', 'rechtehand', 'variable', 'karte'] },
+    { id: 'gyro', tag: { de: 'Sensoren', en: 'Sensors' },
+      title: { de: 'Gyroskop \u2013 wie der Roboter seine Drehung sp\u00fcrt', en: 'Gyroscope \u2013 how the robot feels its turning' },
+      sub: { de: 'Warum man erst stillhalten und kalibrieren muss.', en: 'Why you have to hold still and calibrate first.' },
+      lex: ['imu', 'kalibrierung', 'odometrie', 'regelkreis'] },
+    { id: 'variablen', tag: { de: 'Programmieren', en: 'Programming' },
+      title: { de: 'Variablen und Z\u00e4hler', en: 'Variables and counters' },
+      sub: { de: 'Wie ein Programm mitz\u00e4hlt und wei\u00df, wann Schluss ist.', en: 'How a program counts along and knows when to stop.' },
+      lex: ['variable', 'schleife', 'bedingung', 'liste'] },
+  ];
+
+  /* The DIP modes, as in docs/firmware.md "Modes": SW1 SW2 SW3, read once at boot */
+  const DIPMODES = [
+    { sw: [0, 0, 0], name: { de: 'Web-Simulator', en: 'Web simulator' } },
+    { sw: [1, 0, 0], name: { de: 'Bluetooth-Test', en: 'Bluetooth test' } },
+    { sw: [0, 1, 0], name: { de: 'Motor-Test', en: 'Motor test' } },
+    { sw: [1, 1, 0], name: { de: 'PID-Test', en: 'PID test' } },
+    { sw: [0, 0, 1], name: { de: 'Labyrinth', en: 'Maze' } },
   ];
 
   /* ---------------- Lexikon categories ---------------- */
@@ -662,7 +864,7 @@
               en: 'Tiny switches on the board. The robot reads them once at power-up and picks its mode with them.' },
       where: { de: 'SW1 bis SW3 (einer der vier geht nicht). Nur SW3 an = Labyrinth.',
                en: 'SW1 to SW3 (one of the four does not work). Only SW3 on = maze.' },
-      links: ['taster', 'firmware'],
+      links: ['dipmodi', 'taster', 'firmware'],
       fig: () => {
         let s = '<rect x="38" y="24" width="124" height="62" rx="6" class="bf"/><text x="44" y="18" class="ts">ON \u2191</text>';
         for (let i = 0; i < 4; i++) {
@@ -672,6 +874,30 @@
                '<text x="' + (x + 10) + '" y="100" text-anchor="middle" class="ts">' + (i + 1) + '</text>';
         }
         return s + '<path d="M138 30 L158 80 M158 30 L138 80" class="r" opacity=".55"/>';
+      },
+    },
+    {
+      id: 'dipmodi', cat: 'elek',
+      term: { de: 'DIP-Schalter: die Modi', en: 'DIP switches: the modes' },
+      alias: 'Modus mode Tabelle table SW1 SW2 SW3 Web-Simulator Bluetooth-Test Motor-Test PID-Test Labyrinth maze HELP',
+      text: { de: 'Drei Schalter, f\u00fcnf Modi. Der Roboter liest sie nur beim Einschalten \u2013 nach dem Umstellen Reset dr\u00fccken.',
+              en: 'Three switches, five modes. The robot reads them only at power-up \u2013 after switching, press reset.' },
+      where: { de: 'Jeder Modus meldet sich mit einer Startzeile und antwortet auf HELP. Im Unterricht meist: nur SW3 an = Labyrinth.',
+               en: 'Every mode prints a start line and answers HELP. In class usually: only SW3 on = maze.' },
+      links: ['dip', 'firmware', 'kommando'],
+      fig: (L) => {
+        let s = '<text x="14" y="13" class="ts">SW1</text><text x="38" y="13" class="ts">SW2</text><text x="62" y="13" class="ts">SW3</text>' +
+          '<text x="92" y="13" class="ts">' + tr(L, 'Modus', 'mode') + '</text>';
+        DIPMODES.forEach((m, i) => {
+          const y = 20 + i * 18;
+          s += '<rect x="6" y="' + y + '" width="188" height="16" rx="3" class="' + (i === 4 ? 'lx-dmhot' : 'mf') + '"/>';
+          for (let k = 0; k < 3; k++) {
+            s += '<rect x="' + (16 + k * 24) + '" y="' + (y + 3) + '" width="14" height="10" rx="2" class="' + (m.sw[k] ? 'rf' : 'wf k1') + '"/>' +
+              '<text x="' + (23 + k * 24) + '" y="' + (y + 11) + '" text-anchor="middle" class="lx-dmt' + (m.sw[k] ? ' tw' : '') + '">' + (m.sw[k] ? 'ON' : '') + '</text>';
+          }
+          s += '<text x="92" y="' + (y + 12) + '" class="tb lx-dmn">' + m.name[L === 'en' ? 'en' : 'de'] + '</text>';
+        });
+        return s;
       },
     },
     {
@@ -949,14 +1175,14 @@
         '<text x="105" y="40" text-anchor="middle" class="ts">' + tr(L, '30 cm in 1 ns', '30 cm in 1 ns') + '</text>',
     },
     {
-      id: 'imu', cat: 'sens', status: 'planned',
+      id: 'imu', cat: 'sens', status: 'connected', topic: 'gyro',
       term: { de: 'Gyroskop & IMU', en: 'Gyroscope & IMU' },
-      alias: 'Drehung Beschleunigung MPU6050 gyro',
+      alias: 'Drehung Beschleunigung MPU6050 gyro Drift Bias',
       text: { de: 'Ein Gyroskop sp\u00fcrt Drehungen, ein Beschleunigungs-Sensor sp\u00fcrt Schubsen. Zusammen hei\u00dfen sie IMU.',
               en: 'A gyroscope feels turning, an accelerometer feels pushing. Together they are called an IMU.' },
-      where: { de: 'Steckplatz H2 ist f\u00fcr eine IMU (MPU6050) vorbereitet. Drehungen damit messen ist geplant.',
-               en: 'Header H2 is ready for an IMU (MPU6050). Measuring turns with it is planned.' },
-      links: ['odometrie', 'kalibrierung'],
+      where: { de: 'Angeschlossen: Ein MPU6050 steckt auf Steckplatz H2 und antwortet (Befehl IMU im Labyrinth-Modus). Drehen mit dem Gyro: Regelung in Arbeit.',
+               en: 'Connected: an MPU6050 sits on header H2 and answers (command IMU in maze mode). Turning with the gyro: control in progress.' },
+      links: ['odometrie', 'kalibrierung', 'regelkreis'],
       fig: () =>
         '<path d="M70 44 L100 30 L130 44 L100 58 Z" class="mf k1"/><path d="M70 44 V76 L100 90 V58 Z" class="sand k1"/><path d="M130 44 V76 L100 90 V58 Z" class="wf k1"/>' +
         '<path d="M100 58 V12" class="r" stroke-width="2.6"/><path d="M95 18 L100 10 L105 18" class="r" stroke-width="2.6"/>' +
@@ -1122,19 +1348,39 @@
         '<text x="156" y="54" text-anchor="middle" class="tw ts0">STM32</text>',
     },
     {
-      id: 'bootloader', cat: 'soft',
+      id: 'bootloader', cat: 'soft', act: 'uf2',
       term: { de: 'Bootloader & UF2', en: 'Bootloader & UF2' },
-      alias: 'Update flashen RATROCKET DFU',
+      alias: 'Update flashen RATROCKET DFU Laufwerk drive drag drop',
       text: { de: 'Ein kleines Start-Programm, das neue Firmware aufspielen kann. Bei deinem Roboter geht das wie Datei-Kopieren.',
               en: 'A small start-up program that can install new firmware. On your robot it works like copying a file.' },
-      where: { de: 'Reset zweimal schnell dr\u00fccken (oder UPDATE): Ein Laufwerk RATROCKET erscheint. ratrocket.uf2 draufziehen \u2013 fertig.',
-               en: 'Press reset twice quickly (or UPDATE): a drive called RATROCKET appears. Drop ratrocket.uf2 onto it \u2013 done.' },
+      where: { de: 'Reset zweimal schnell dr\u00fccken (oder UPDATE schicken): Ein Laufwerk RATROCKET erscheint. ratrocket.uf2 draufziehen \u2013 nach etwa 2 s l\u00e4uft das neue Programm. Ohne Treiber.',
+               en: 'Press reset twice quickly (or send UPDATE): a drive called RATROCKET appears. Drop ratrocket.uf2 onto it \u2013 about 2 s later the new program runs. No driver needed.' },
       links: ['firmware', 'usb', 'led'],
       fig: () =>
-        '<g class="a-slide"><path d="M18 22 H44 L54 32 V64 H18 Z" class="wf k"/><text x="36" y="52" text-anchor="middle" class="tb ts0">.uf2</text></g>' +
-        '<rect x="104" y="36" width="84" height="44" rx="6" class="mf k"/><rect x="104" y="64" width="84" height="16" rx="0" class="k1" style="fill:#c8cdd6"/>' +
-        '<circle cx="176" cy="72" r="3" class="bf a-blink"/>' +
-        '<text x="146" y="56" text-anchor="middle" class="tb ts0">RATROCKET</text>',
+        '<g class="uf-file a-slide"><path d="M18 22 H44 L54 32 V64 H18 Z" class="wf k"/><text x="36" y="52" text-anchor="middle" class="tb ts0">.uf2</text></g>' +
+        '<g class="uf-drive"><rect x="104" y="36" width="84" height="44" rx="6" class="mf k"/><rect x="104" y="64" width="84" height="16" rx="0" class="k1" style="fill:#c8cdd6"/>' +
+        '<text x="146" y="56" text-anchor="middle" class="tb ts0">RATROCKET</text></g>' +
+        '<circle cx="176" cy="72" r="3" class="bf uf-led a-blink"/>' +
+        '<g class="uf-com"><rect x="112" y="40" width="68" height="26" rx="5" class="df"/><text x="146" y="57" text-anchor="middle" class="tw ts0">COM</text></g>' +
+        '<g class="uf-ok"><circle cx="146" cy="96" r="9" class="grf"/><path d="M141 96 l4 4 7 -8" style="fill:none;stroke:#fff;stroke-width:2.4"/></g>',
+    },
+    {
+      id: 'fernsteuerung', cat: 'soft', act: 'dpad',
+      term: { de: 'Fernsteuerung', en: 'Remote control' },
+      alias: 'drive Steuerkreuz D-Pad fernsteuern remote FWD TURN STOP VRUN',
+      text: { de: 'Ein Steuerkreuz im Browser. Jeder Knopf schickt einen Befehl \u00fcber Bluetooth oder USB-C, und der Roboter f\u00e4hrt ihn sofort.',
+              en: 'A D-pad in the browser. Every button sends a command over Bluetooth or USB-C, and the robot drives it at once.' },
+      where: { de: 'Seite drive.html, Labyrinth-Modus: \u25b2 = FWD 160 (ein Feld), \u25c0 \u25b6 = TURN \u221290 / TURN 90, STOPP = STOP. Das Tempo schickt sie als VRUN.',
+               en: 'Page drive.html, maze mode: \u25b2 = FWD 160 (one cell), \u25c0 \u25b6 = TURN \u221290 / TURN 90, STOP = STOP. The speed is sent as VRUN.' },
+      links: ['kommando', 'bluetooth', 'usb'],
+      fig: () => {
+        const k = (x, y, d) => '<rect x="' + x + '" y="' + y + '" width="22" height="22" rx="5" class="df"/><path d="' + d + '" class="gf"/>';
+        return k(36, 14, 'M47 19 l7 10 h-14 z') + k(36, 62, 'M47 79 l7 -10 h-14 z') + k(12, 38, 'M17 49 l10 -7 v14 z') + k(60, 38, 'M77 49 l-10 -7 v14 z') +
+          '<circle cx="47" cy="49" r="8" class="rf"/>' +
+          '<g class="a-ping"><path d="M92 36 A16 16 0 0 1 92 62" class="b" stroke-width="2.6"/></g>' +
+          '<g class="a-ping d2"><path d="M92 36 A16 16 0 0 1 92 62" class="b" stroke-width="2.6"/></g>' +
+          '<g class="dp-bot" style="transform:translate(160px,62px)">' + bot(0, 0, 0, 0.36) + '</g>';
+      },
     },
     {
       id: 'kommando', cat: 'soft', act: 'cmd',
@@ -1216,18 +1462,78 @@
         '<rect x="140" y="80" width="56" height="22" rx="6" class="blk-m"/><text x="168" y="95" text-anchor="middle" class="tw ts0">\u21b7 ' + tr(L, 'drehe', 'turn') + '</text>',
     },
     {
-      id: 'variable', cat: 'algo',
+      id: 'variable', cat: 'algo', act: 'var', topic: 'variablen',
       term: { de: 'Variable', en: 'Variable' },
-      alias: 'Speicher merken Wert value',
+      alias: 'Speicher merken Wert value setze aendere zeige set change show Zaehler counter',
       text: { de: 'Ein Kasten mit Namen, in dem eine Zahl liegt. Die Zahl darf sich \u00e4ndern, der Name bleibt.',
               en: 'A box with a name that holds a number. The number may change, the name stays.' },
-      where: { de: 'Der Roboter merkt sich zum Beispiel, wo er ist: x, y und die Richtung (Befehl WHERE).',
-               en: 'The robot remembers, for example, where it is: x, y and its heading (command WHERE).' },
-      links: ['programm', 'floodfill'],
-      fig: () =>
+      where: { de: 'Im Editor: setze, \u00e4ndere und zeige (Aufgaben 8 und 9). Der Roboter selbst merkt sich x, y und die Richtung (Befehl WHERE).',
+               en: 'In the editor: set, change and show (tasks 8 and 9). The robot itself remembers x, y and its heading (command WHERE).' },
+      links: ['programm', 'liste', 'schleife', 'floodfill'],
+      fig: (L) =>
         '<path d="M40 40 L60 26 H160 L140 40 Z" class="sand k1"/><rect x="40" y="40" width="100" height="56" class="mf k"/><path d="M140 40 L160 26 V82 L140 96 Z" class="sand k1"/>' +
-        '<rect x="58" y="10" width="34" height="20" rx="4" class="bf"/><text x="75" y="25" text-anchor="middle" class="tw">x</text>' +
-        '<text x="90" y="80" text-anchor="middle" class="big a-cyc c1">0</text><text x="90" y="80" text-anchor="middle" class="big a-cyc c2">1</text><text x="90" y="80" text-anchor="middle" class="big a-cyc c3">2</text>',
+        '<rect x="50" y="6" width="70" height="20" rx="4" class="vf"/><text x="85" y="21" text-anchor="middle" class="tw lx-vname">' + tr(L, 'Schritte', 'Steps') + '</text>' +
+        '<text x="90" y="82" text-anchor="middle" class="big lx-val">0</text>',
+    },
+    {
+      id: 'liste', cat: 'algo', status: 'planned',
+      term: { de: 'Liste', en: 'List' },
+      alias: 'Array Reihe Index Nummer list',
+      text: { de: 'Viele Zettel in einer Reihe, jeder mit einer Nummer. So merkt sich ein Programm nicht nur eine Zahl, sondern ganz viele.',
+              en: 'Many notes in a row, each with a number. That way a program remembers not just one number but lots of them.' },
+      where: { de: 'Im Editor geplant. Im Roboter stecken schon Listen: Seine Karte merkt sich f\u00fcr jedes Feld die W\u00e4nde, Flood-Fill f\u00fcr jedes Feld eine Zahl.',
+               en: 'Planned in the editor. The robot already has lists inside: its map stores the walls of every cell, flood fill a number for every cell.' },
+      links: ['variable', 'karte', 'floodfill'],
+      fig: (L) => {
+        const v = [3, 2, 1, 0, 1];
+        let s = '<text x="20" y="28" class="ts">' + tr(L, 'Nummer', 'index') + '</text>';
+        for (let i = 0; i < 5; i++) {
+          s += '<rect x="' + (20 + i * 34) + '" y="38" width="30" height="34" rx="4" class="wf k"/>' +
+            '<text x="' + (35 + i * 34) + '" y="62" text-anchor="middle" class="tb">' + v[i] + '</text>' +
+            '<text x="' + (35 + i * 34) + '" y="88" text-anchor="middle" class="ts">' + (i + 1) + '</text>';
+        }
+        return s + '<rect x="86" y="34" width="38" height="42" rx="6" class="g a-blink2" stroke-width="3"/>' +
+          '<text x="105" y="104" text-anchor="middle" class="ts">' + tr(L, 'Platz 3 = 1', 'item 3 = 1') + '</text>';
+      },
+    },
+    {
+      id: 'funktion', cat: 'algo', status: 'wip',
+      term: { de: 'Funktion / \u201eMein Baustein\u201c', en: 'Function / \u201cmy block\u201d' },
+      alias: 'eigener Baustein Unterprogramm definiere Meine Bausteine procedure define own block',
+      text: { de: 'Ein paar Bausteine bekommen einen Namen und werden zu einem neuen Baustein. Einmal bauen, oft benutzen.',
+              en: 'A few blocks get a name and become a new block. Build it once, use it often.' },
+      where: { de: 'Im Editor in Arbeit: \u201eMeine Bausteine\u201c mit \u201edefiniere\u201c. In der Firmware steckt hinter jedem Befehl wie CELL eine Funktion.',
+               en: 'In progress in the editor: \u201cMy blocks\u201d with \u201cdefine\u201d. In the firmware every command such as CELL runs a function.' },
+      links: ['programm', 'schleife', 'algorithmus'],
+      fig: (L) =>
+        '<path d="M4 8 H108 a6 6 0 0 1 6 6 V24 H22 V68 H114 V76 a6 6 0 0 1 -6 6 H4 Z" class="blk-f"/>' +
+        '<text x="11" y="20" class="tw ts0">' + tr(L, 'definiere Ecke', 'define corner') + '</text>' +
+        '<rect x="26" y="28" width="84" height="16" rx="4" class="blk-m"/><text x="31" y="40" class="tw ts0">\u25b2 ' + tr(L, 'fahre 1 Feld', 'move 1 cell') + '</text>' +
+        '<rect x="26" y="48" width="84" height="16" rx="4" class="blk-m"/><text x="31" y="60" class="tw ts0">\u21b7 ' + tr(L, 'drehe rechts', 'turn right') + '</text>' +
+        '<path d="M120 45 H134" class="k"/>' + arrowR(134, 45) +
+        '<rect x="140" y="22" width="56" height="20" rx="6" class="blk-f"/><text x="147" y="36" class="tw ts0">\u25a3 ' + tr(L, 'Ecke', 'corner') + '</text>' +
+        '<rect x="140" y="48" width="56" height="20" rx="6" class="blk-f"/><text x="147" y="62" class="tw ts0">\u25a3 ' + tr(L, 'Ecke', 'corner') + '</text>' +
+        '<text x="168" y="88" text-anchor="middle" class="ts">' + tr(L, '2 statt 4', '2 instead of 4') + '</text>',
+    },
+    {
+      id: 'karte', cat: 'algo',
+      term: { de: 'Karte (Ged\u00e4chtnis)', en: 'Map (memory)' },
+      alias: 'Map merken Waende Kartograf memory MAP RESETMAP unbekannt unseen',
+      text: { de: 'Der Roboter merkt sich, wo er schon W\u00e4nde gesehen hat. Jede Wand kennt drei Zust\u00e4nde: offen, Wand oder noch nicht gesehen.',
+              en: 'The robot remembers where it has already seen walls. Every wall has three states: open, wall or not seen yet.' },
+      where: { de: 'Labyrinth-Modus: MAP druckt die Karte, RESETMAP vergisst sie, WHERE sagt, wo er steht. GO plant damit den Weg.',
+               en: 'Maze mode: MAP prints the map, RESETMAP forgets it, WHERE says where it is. GO plans its way with it.' },
+      links: ['floodfill', 'liste', 'variable'],
+      fig: (L) => {
+        let s = '<rect x="20" y="8" width="96" height="96" class="wf"/>';
+        for (let i = 1; i < 4; i++) s += '<path d="M' + (20 + i * 24) + ' 8 V104 M20 ' + (8 + i * 24) + ' H116" class="m k1" stroke-dasharray="2 4"/>';
+        s += '<path d="M20 8 H116 V104 H20 Z M44 80 V104 M44 56 H92 M68 32 V56" class="r" stroke-width="3.4" style="fill:none"/>';
+        s += '<text x="104" y="24" text-anchor="middle" class="tb" fill="#9aa4b3">?</text><text x="104" y="48" text-anchor="middle" class="tb">?</text>';
+        s += bot(32, 92, 0, 0.18);
+        return s + '<path d="M128 30 H146" class="r" stroke-width="3.4"/><text x="152" y="34" class="ts">' + tr(L, 'Wand', 'wall') + '</text>' +
+          '<path d="M128 54 H146" class="m k1" stroke-dasharray="2 4"/><text x="152" y="58" class="ts">' + tr(L, 'offen', 'open') + '</text>' +
+          '<text x="137" y="82" text-anchor="middle" class="tb">?</text><text x="152" y="82" class="ts">' + tr(L, 'ungesehen', 'unseen') + '</text>';
+      },
     },
     {
       id: 'algorithmus', cat: 'algo',
@@ -1283,5 +1589,5 @@
     },
   ];
 
-  root.RLData = { TEXT, TOPICS, CATS, LEX };
+  root.RLData = { TEXT, TOPICS, CATS, LEX, DIPMODES };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -616,6 +616,91 @@ details.pro .ctl { margin-top: 8px; }
 .lxs .a-wave { animation: lxWave 4s ease-out infinite; animation-delay: calc(var(--d) * .3s); }
 @keyframes lxWave { 0% { opacity: .15; } 12%, 80% { opacity: 1; } 100% { opacity: .15; } }
 
+/* ---------------- gyroscope ---------------- */
+.gy-calrow { margin-top: 14px; }
+.gy-calstate { font: 500 13px var(--display); color: var(--ink-2); }
+.gy-calstate.ok { color: #0f6a41; }
+.vg-turn { animation: vgTurn 6s cubic-bezier(.45, 0, .3, 1) infinite; }
+@keyframes vgTurn { 0%, 15% { transform: rotate(0); } 40%, 60% { transform: rotate(90deg); } 85%, 100% { transform: rotate(0); } }
+.vg-needle { animation: vgNeedle 6s cubic-bezier(.45, 0, .3, 1) infinite; }
+@keyframes vgNeedle { 0%, 15% { transform: rotate(-1deg); } 22%, 33% { transform: rotate(40deg); } 40%, 60% { transform: rotate(-1deg); } 67%, 78% { transform: rotate(-40deg); } 85%, 100% { transform: rotate(-1deg); } }
+.rm .vg-turn { transform: rotate(60deg); }
+.rm .vg-needle { transform: rotate(40deg); }
+
+/* on a phone the 900-unit stages shrink to 40 %: bigger stage text there */
+@media (max-width: 760px) {
+  .gy-stage .st-txt, .gy-stage .sc-lbl-g { font-size: 25px; }
+  .gy-stage .st-txt-s { font-size: 21px; }
+  .gy-stage .gy-chip { display: none; }
+  .gy-curve .sc-lbl { font-size: 22px; }
+  .va-stage .st-txt-s { font-size: 22px; }
+  .va-stage .va-stamp { font-size: 26px; }
+  .va-stage .va-bubt { font-size: 22px; }
+}
+
+/* ---------------- variables: the editor's blocks and watch panel ---------------- */
+.va-cols { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 760px) { .va-cols { grid-template-columns: 1fr; } }
+.va-prog { display: flex; flex-direction: column; gap: 7px; }
+.vb { --c: var(--c-move); font: 500 15px var(--display); color: #fff; }
+.vb .row { display: flex; align-items: center; gap: 9px; min-height: 40px; padding: 4px 12px; background: var(--c); border-radius: 13px; transition: box-shadow .15s; }
+.vb .glyph { font-size: 17px; line-height: 1; opacity: .92; }
+.vb .lbl { display: inline-flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.vb.cat-move { --c: var(--c-move); }
+.vb.cat-loop { --c: var(--c-loop); }
+.vb.cat-var  { --c: #d8690b; }
+.vb.has-body > .row { border-radius: 13px 13px 0 0; }
+.vb .arm { background: var(--c); padding-left: 15px; }
+.vb .belly { background: var(--inset); border-radius: 9px 0 0 9px; padding: 7px; display: flex; flex-direction: column; gap: 7px; }
+.vb .foot { height: 14px; background: var(--c); border-radius: 0 0 13px 13px; }
+.vb.running > .row { box-shadow: 0 0 0 3px var(--pad); }
+.vb-var { background: rgba(255, 255, 255, .22); border-radius: 7px; padding: 1px 7px; }
+.vb-num { background: rgba(255, 255, 255, .94); color: var(--ink); border-radius: 7px; padding: 0 8px; font-variant-numeric: tabular-nums; }
+.vb .cond { border: 0; border-radius: 8px; padding: 3px 6px; background: rgba(255, 255, 255, .22); color: #fff; font: 600 15px var(--display); cursor: pointer; }
+.vb .cond option { color: var(--ink); }
+.vb .num-in { width: 2.6em; border: 0; border-radius: 7px; padding: 2px 3px; background: rgba(255, 255, 255, .94); color: var(--ink); text-align: center; font: 600 15px var(--display); }
+.vb .cond-pill { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.watch { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; background: var(--inset); border-radius: var(--r); }
+.watch-row { display: flex; align-items: center; gap: 6px 10px; flex-wrap: wrap; }
+.watch-title { display: inline-flex; align-items: center; gap: 6px; font: 500 13px var(--display); color: var(--ink-2); }
+.watch-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.wv { display: inline-flex; align-items: stretch; overflow: hidden; border: 2px solid var(--line); border-radius: 9px; font: 500 16px var(--display); transition: border-color .2s; }
+.wv-name { background: #d8690b; color: #fff; padding: 3px 9px; }
+.wv-val { background: var(--panel); padding: 3px 10px; min-width: 2.6em; text-align: center; font-weight: 600; font-variant-numeric: tabular-nums; }
+.wv.is-new { border-color: var(--pad); box-shadow: 0 0 0 2px rgba(227, 162, 51, .35); }
+.wv.bump .wv-val { animation: wvBump 650ms ease-out; }
+@keyframes wvBump { 0% { background: #ffd879; transform: scale(1.18); } 100% { background: var(--panel); transform: scale(1); } }
+.watch-log { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; font: 500 12.5px var(--ui); color: var(--ink-2); }
+.wl-head { font-family: var(--display); margin-right: 2px; }
+.wl-item { background: var(--panel); border: 1px solid var(--line); border-radius: 7px; padding: 1px 7px; color: var(--ink); }
+.va-stamp { font: 600 16px var(--display); fill: var(--pad); }
+.va-bubt { font: 600 17px var(--display); fill: var(--ink); }
+.tcard-print .vig { background: #5a6577; }
+.tcard-print .num { background: var(--c-move); }
+
+/* ---------------- new Lexikon figures ---------------- */
+.lx-badge { white-space: nowrap; display: inline-block; }
+.lx-badge.wip { color: #0f4f9a; border-color: var(--c-move); }
+.lx-badge.conn { color: #0f6a41; border-color: var(--c-loop); }
+.lxs .vf { fill: #d8690b; }
+.lxs .blk-f { fill: #b83280; }
+.lxs .lx-dmhot { fill: rgba(210, 43, 30, .14); }
+.lxs .lx-dmt { font-size: 6.5px; font-weight: 600; }
+.lxs .lx-dmn { font-size: 10.5px; }
+.lxs .lx-val { transform-box: fill-box; transform-origin: center; }
+.lxs .lx-val.bump { animation: wvBump2 .5s ease-out; }
+@keyframes wvBump2 { 0% { transform: scale(1.35); fill: var(--board); } 100% { transform: scale(1); } }
+.tog-v { font-size: 12.5px; padding: 3px 8px; }
+.lxs[data-uf] .uf-file { animation: none; opacity: 0; }
+.lxs[data-uf] .uf-ok, .lxs[data-uf] .uf-led { opacity: 0; }
+.lxs[data-uf="run"] .uf-drive { opacity: .18; }
+.lxs:not([data-uf="run"]) .uf-com { opacity: 0; }
+.lxs[data-uf="drive"] .uf-file { opacity: 1; }
+.lxs[data-uf="drive"] .uf-led { opacity: 1; animation: none; }
+.lxs[data-uf="done"] .uf-file { opacity: 1; animation: slide 3s ease-in-out 1 forwards; }
+.lxs[data-uf="done"] .uf-ok, .lxs[data-uf="done"] .uf-led { opacity: 1; }
+.lxs .dp-bot { transition: transform .35s cubic-bezier(.4, 0, .25, 1); }
+
 /* ---------------- reduced motion ----------------
  * learn.js puts .rm on <html> when the system asks for less motion (or for
  * ?motion=reduce). Everything stops in its final, readable state. */
