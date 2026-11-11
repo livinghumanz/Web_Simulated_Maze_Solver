@@ -127,6 +127,107 @@
     };
   }
 
+  /* Tournament counters after the intended solutions, against the scoring
+   * of docs/curriculum/anhang-turnier.md (cell 10, turn 8). Task 2's 48 and
+   * task 5's 74 are the numbers the curriculum itself quotes. */
+  const STATS = { 1: [2, 0, 20], 2: [4, 1, 48], 3: [6, 2, 76], 4: [4, 1, 48], 5: [5, 3, 74] };
+  const seen = {};
+  function statsCheck() {
+    const bad = [];
+    for (const id in STATS) {
+      const s = seen[id], [m, tr, p] = STATS[id];
+      if (!s || s.moves !== m || s.turns !== tr || s.points !== p || s.points !== 10 * s.moves + 8 * s.turns) {
+        bad.push(id + ': ' + JSON.stringify(s));
+      }
+    }
+    return { id: 'stats', ok: !bad.length,
+             detail: 'cells / turns / drive-time points: ' + (bad.length ? 'BAD ' + bad.join('; ')
+               : Object.keys(STATS).map((id) => 'task ' + id + ' ' + seen[id].points).join(', ')) };
+  }
+
+  /* Task 3 teaches the loop: the shortcut along the bottom is walled off,
+   * and without a loop it costs 8 blocks and one star. */
+  async function loopCheck(index) {
+    const run = async (p) => {
+      A.goLevel(index); A.setProg(clone(p)); A.clearResult(); A.resetRun();
+      await A.runAll();
+      return verdict();
+    };
+    const cut = await run([B('right'), B('move'), B('move')]);
+    const long = [B('move'), B('move'), B('right'), B('move'), B('move'), B('right'), B('move'), B('move')];
+    const flat = await run(long);
+    const stars = A.starsFor(A.countBlocks(long), A.LEVELS[index].par);
+    return { id: 'loop3', ok: !cut.win && cut.reason === 'failedWall' && flat.win && stars === 1,
+             detail: 'shortcut right/move/move: ' + (cut.win ? 'WINS' : 'blocked (' + cut.reason + ')') +
+                     '; 8 blocks without a loop: ' + (flat.win ? 'solved' : 'FAILED') + ', ' + stars + ' star(s)' };
+  }
+
+  /* A stand-in robot that answers from the simulator's maze. */
+  function botReply(line) {
+    const w = A.world, b = w.bot;
+    const open = (d) => w.inside(b.x, b.y) && !w.walls[b.x][b.y][d];
+    const R = { N: 'E', E: 'S', S: 'W', W: 'N' }, L = { N: 'W', W: 'S', S: 'E', E: 'N' };
+    if (line === 'CELL') return [open(b.d) ? 'CELL done' : 'CELL failed'];
+    if (/^TURN /.test(line)) return ['TURN done (event 0)'];
+    if (line === 'WALLS') {
+      const f = (d) => (open(d) ? '300' : '60(wall)');
+      return ['WALLS: F=' + f(b.d) + ' L=' + f(L[b.d]) + ' R=' + f(R[b.d])];
+    }
+    return [];
+  }
+
+  /* Task 6 with the real robot: after each maze the run waits for Weiter -
+   * nothing starts by itself. */
+  async function chainCheck(index) {
+    const level = A.LEVELS[index];
+    const mazes = 1 + level.variants.length;
+    const bar = document.getElementById('verdict');
+    let ok = true, why = '';
+    A.goLevel(index);
+    A.setProg(clone(SOLUTIONS[6]));
+    A.clearResult();
+    A.resetRun();
+    A.fakeRobot(botReply);
+    try {
+      await A.runAll();
+      for (let m = 0; m < mazes; m++) {
+        const r = await verdict();
+        if (!r.win) { ok = false; why = 'maze ' + (m + 1) + ' ' + r.reason; break; }
+        if (m === mazes - 1) break;
+        const btn = bar.querySelector('button');
+        await sleep(1500);                                   /* the simulation would have gone on by now */
+        if (!btn || A.world.trail.length) { ok = false; why = 'started by itself after maze ' + (m + 1); break; }
+        A.clearResult();
+        btn.click();
+      }
+    } finally {
+      A.fakeRobot(null);
+    }
+    return { id: 'chain6', ok, detail: 'task 6, real robot: ' + (ok ? 'waits for Weiter after each maze, ' + mazes + '/' + mazes + ' solved' : 'BAD ' + why) };
+  }
+
+  /* No answer from the robot is its own message, not a wall. */
+  async function silentCheck() {
+    const out = [];
+    A.setTimeScale(0.01);
+    A.fakeRobot(() => []);
+    try {
+      for (const [id, prog] of [[1, [B('move'), B('move')]], [4, SOLUTIONS[4]]]) {
+        A.goLevel(A.LEVELS.findIndex((l) => l.id === id));
+        A.setProg(clone(prog));
+        A.clearResult();
+        A.resetRun();
+        await A.runAll();
+        out.push((await verdict()).reason);
+      }
+    } finally {
+      A.fakeRobot(null);
+      A.setTimeScale(1);
+    }
+    return { id: 'silent', ok: out.every((r) => r === 'botSilent'),
+             detail: 'robot silent on CELL and on WALLS: ' + out.join(', ') };
+  }
+
   async function ownCheck(c, index) {
     A.goLevel(index);
     if (!A.setSandbox(c.maze)) return { id: c.id, ok: false, detail: c.name + ': maze refused' };
@@ -419,8 +520,14 @@
     const own = A.LEVELS.findIndex((l) => l.sandbox);
     A.setFast(true);
     for (let i = 0; i < A.LEVELS.length; i++) {
-      if (!A.LEVELS[i].sandbox) out.push(await guard(A.LEVELS[i].id, () => check(A.LEVELS[i], i)));
+      if (A.LEVELS[i].sandbox) continue;
+      out.push(await guard(A.LEVELS[i].id, () => check(A.LEVELS[i], i)));
+      seen[A.LEVELS[i].id] = A.stats;
     }
+    out.push(await guard('stats', async () => statsCheck()));
+    out.push(await guard('loop3', () => loopCheck(A.LEVELS.findIndex((l) => l.id === 3))));
+    out.push(await guard('chain6', () => chainCheck(A.LEVELS.findIndex((l) => l.id === 6))));
+    out.push(await guard('silent', () => silentCheck()));
     for (const c of OWN) out.push(await guard(c.id, () => ownCheck(c, own)));
     try { out.push(...await ruleChecks(own)); }
     catch (e) { out.push({ id: 'rules', ok: false, detail: 'threw: ' + e.message }); }

@@ -19,6 +19,7 @@ simulator but cannot connect a robot (no Web Serial).
 | `web/code.js` | Editor, drag and drop, simulator, interpreter, robot link, own maze, program files |
 | `web/code-selftest.js` | Plays a known solution for every level, checks files and font (see below) |
 | `web/fonts/` | Fredoka (`fredoka-latin.woff2`) and its licence `OFL.txt` |
+| `web/drive.html`, `drive.css`, `drive.js` | **Fernsteuerung** — the remote-control page (see below) |
 | `web/img/robot-maze.png` | Top-view render of the real board, the robot in the maze |
 | `web/img/robot.png` | The 3/4 render in the header and the robot card |
 | `web/img/robot.svg` | A drawn top view of the robot as a standalone file, for slides |
@@ -53,7 +54,10 @@ real maze. Stars: three if the program needs at most `par` blocks.
 
 1. **Geradeaus** — a sequence (2 blocks)
 2. **Um die Ecke** — turning (5)
-3. **Immer im Kreis** — `repeat` pays off (4)
+3. **Immer im Kreis** — `repeat` pays off (4). The middle cell is walled in
+   and a wall on the bottom row (between the middle and the right cell)
+   closes the old 3-block shortcut, so "around the outside" is the only way:
+   4 blocks with the loop, 8 without (one star)
 4. **Schau nach vorne** — the first sensor decision (4)
 5. **Raus hier!** — the right-hand wall follower, on the maze the robot really
    escaped on 2026-11-07 (6 blocks, par 7)
@@ -170,6 +174,21 @@ and the robot hops once on its axle — SVG and CSS only. With "reduce motion"
 switched on in the operating system nothing moves. The verdict bar is the same
 either way.
 
+## Tournament counters
+
+After every run — solved or not — the verdict bar shows, in a small line under
+the message, what the tournament counts (`docs/curriculum/anhang-turnier.md`):
+
+`6 Bausteine · 5 Felder · 3 Drehungen · 74 Fahrzeit-Punkte`
+
+Blocks are the program's blocks; Felder are the cells actually driven (the
+move out of the maze counts); Drehungen are the turns actually made —
+`drehe nach rechts`, `drehe nach links` and `dreh dich um` count alike; and
+**Fahrzeit-Punkte = 10 × Felder + 8 × Drehungen**. A move into a wall is not
+counted. On task 6 the line is for the maze just driven. The test hook has
+them as `RRApp.stats`. Check values from the curriculum: task 2 = 48, task 5
+= 74 (both met by the self-test).
+
 ## Real robot
 
 The switch **Echter Roboter** sends every block to the robot over Web Serial
@@ -191,6 +210,50 @@ and heading ("… ins Startfeld unten links im Labyrinth, Blick nach oben
 (Norden)"; in an own maze the placed start, also outside the border). Own
 mazes above 5×5 do not run in robot mode at all (see above).
 
+- **Task 6 never moves on by itself with the robot.** In the simulation the
+  next maze still starts after a second; with **Echter Roboter** the verdict
+  says "Geschafft! 1/3. Bau das nächste Labyrinth auf und stell den Roboter
+  auf den Start." and waits for **Weiter**.
+- **No answer is its own message.** If the robot does not answer a command in
+  time (`CELL` 15 s, `TURN` 12 s, `WALLS` 4 s), the run ends with "Der
+  Roboter antwortet nicht – Verbindung prüfen." instead of the wall message.
+  A refused or failed move is still "Autsch – da ist eine Wand".
+
+## Fernsteuerung (remote control)
+
+`web/drive.html` drives the robot directly with a big cross of buttons —
+curriculum lesson 4 (ages 8–10), built for a phone over Bluetooth as much as
+for a laptop. Link: **Fernsteuerung** in the editor's top bar (and back via
+**RatRocket Code**). The robot must be in maze mode (DIP SW3 on, SW1/SW2 off).
+
+| Button | Command | Reply it waits for |
+|---|---|---|
+| up | `FWD 160` (or `FWD 80` with *½ Feld*) | `FWD done (event n)` |
+| down | `FWD -160` / `FWD -80` | `FWD done …`; older firmware: `FWD rejected` |
+| left / right | `TURN -90` / `TURN 90` | `TURN done (event n)` |
+| *langsam / mittel / schnell* | `VRUN 50` / `VRUN 80` / `VRUN 120` | the `v_run …` line of the CFG block |
+| STOPP | `STOP` | none — never locked |
+
+Backwards was checked in the firmware source, not assumed: `FWD` parses a
+signed distance (`strtof`, limit ±1000 mm, `app_maze.c`) and
+`Motion_Forward` refuses a negative one only if a wheel cannot reverse; both
+reverse flags are 1 in `motion.h` since the left-motor repair (the note in
+`docs/firmware.md` still says 0). A robot with older firmware answers
+`FWD rejected`; the page then says backwards is not possible and suggests
+"Links" twice.
+
+While a command waits for its reply, the arrows, step and speed are locked;
+**STOPP** always works (during a move the robot stops and still answers
+`FWD done`). Speed is sent once after connecting, so the robot drives at the
+speed shown. Arrow keys drive, space or Escape stops. Same German/English
+switch as the editor (the language setting is shared).
+
+`drive.html?selftest=1` runs a smoke test with a stand-in robot: every button
+and option must send exactly its command, the lockout must hold (other
+buttons send nothing, STOP goes out at once), a silent robot must give the
+"antwortet nicht" message, and a refused backwards move its own hint. Last
+run (2026-11-11): **ALL PASS (18 checks)**.
+
 ## Self-test
 
 `web/code.html?selftest=1` loads `code-selftest.js`, which runs at full speed:
@@ -198,6 +261,11 @@ mazes above 5×5 do not run in robot mode at all (see above).
 - tasks 1–6 with their intended solution — solved, three stars, start inside
   on (0,0) facing north, and exactly one border opening on tasks 5 and 6
   (task 6 must solve all three of its mazes);
+- the tournament counters of those runs (tasks 1–5: 20, 48, 76, 48, 74
+  Fahrzeit-Punkte); task 3's old shortcut must crash and the loop-less
+  8-block solution earn one star; task 6 with a stand-in robot must wait for
+  **Weiter** after each maze; a silent robot (on `CELL` and on `WALLS`) must
+  give the "antwortet nicht" message;
 - own mazes set through the test hook — with a star, with an exit past a dead
   end, and with a moved and turned start for both kinds of goal — each must
   be solved, and no stars may be handed out;
@@ -221,7 +289,7 @@ writes to `localStorage`, so running it in a classroom browser does not touch
 the pupils' work. `?selftest=hook` only sets up the test hook
 (`window.RRApp`) for scripted screenshots and runs nothing.
 
-Last run (2026-11-11): **ALL PASS (33 checks).**
+Last run (2026-11-11): **ALL PASS (37 checks).**
 
 Headless:
 

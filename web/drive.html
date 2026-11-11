@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RatRocket Fernsteuerung</title>
+<link rel="stylesheet" href="code.css">
+<link rel="stylesheet" href="drive.css">
+</head>
+<body class="drive">
+
+<header class="rail">
+  <a class="brand" href="code.html">
+    <img class="brand-bot" src="img/robot.png" alt="">
+    <span class="brand-text">
+      <strong id="t-title">RatRocket Fernsteuerung</strong>
+      <em id="t-tagline">Fahr den Roboter mit den Pfeilen</em>
+    </span>
+  </a>
+  <div class="rail-end">
+    <span class="link-state" id="linkState"><i class="dot"></i><span id="linkText">Nicht verbunden</span></span>
+    <button class="btn btn-primary" id="connectBtn">Roboter verbinden</button>
+    <button class="info" data-tip-key="i_connect" aria-label="Info">i</button>
+    <a class="btn btn-ghost btn-sm rail-link" id="editorLink" href="code.html">RatRocket Code</a>
+    <button class="btn btn-ghost" id="langBtn">English</button>
+  </div>
+</header>
+
+<main class="drive-main">
+  <section class="panel drive-panel">
+    <p class="mode-hint">
+      <span id="t-modeHint">Der Roboter muss im Labyrinth-Modus sein.</span>
+      <button class="info" data-tip-key="i_mode" aria-label="Info">i</button>
+    </p>
+
+    <div class="pad" role="group" aria-label="Steuerkreuz">
+      <button class="pad-btn pad-up" id="btnUp" type="button">
+        <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 7l16 22H30v12H18V29H8z"/></svg>
+        <span id="t-up">Vorw&auml;rts</span>
+      </button>
+      <button class="pad-btn pad-left" id="btnLeft" type="button">
+        <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M36 40V24a10 10 0 0 0-10-10h-6V6L6 18l14 12v-8h6a2 2 0 0 1 2 2v16z"/></svg>
+        <span id="t-left">Links</span>
+      </button>
+      <button class="pad-stop" id="btnStop" type="button"><span id="t-stop">STOPP</span></button>
+      <button class="pad-btn pad-right" id="btnRight" type="button">
+        <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M12 40V24a10 10 0 0 1 10-10h6V6l14 12-14 12v-8h-6a2 2 0 0 0-2 2v16z"/></svg>
+        <span id="t-right">Rechts</span>
+      </button>
+      <button class="pad-btn pad-down" id="btnDown" type="button">
+        <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 41L8 19h10V7h12v12h10z"/></svg>
+        <span id="t-down">R&uuml;ckw&auml;rts</span>
+      </button>
+    </div>
+
+    <div class="drive-opts">
+      <div class="opt">
+        <span class="opt-label" id="t-step">Schritt</span>
+        <div class="seg" role="group" id="stepSeg">
+          <button class="seg-btn" type="button" data-step="80" aria-pressed="false" id="stepHalf">&frac12; Feld</button>
+          <button class="seg-btn" type="button" data-step="160" aria-pressed="true" id="stepFull">1 Feld</button>
+        </div>
+        <button class="info" data-tip-key="i_step" aria-label="Info">i</button>
+      </div>
+      <div class="opt">
+        <span class="opt-label" id="t-speed">Tempo</span>
+        <div class="seg" role="group" id="speedSeg">
+          <button class="seg-btn" type="button" data-speed="50" aria-pressed="false" id="speedSlow">langsam</button>
+          <button class="seg-btn" type="button" data-speed="80" aria-pressed="true" id="speedMid">mittel</button>
+          <button class="seg-btn" type="button" data-speed="120" aria-pressed="false" id="speedFast">schnell</button>
+        </div>
+        <button class="info" data-tip-key="i_speed" aria-label="Info">i</button>
+      </div>
+    </div>
+
+    <p class="drive-status" id="status" role="status" aria-live="polite">Verbinde zuerst den Roboter.</p>
+  </section>
+</main>
+
+<div class="tip" id="tip" hidden></div>
+
+<script src="drive.js"></script>
+</body>
+</html>

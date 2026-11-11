@@ -87,6 +87,7 @@
       angle: ANGLE[lv.start.d],      /* keeps turning, so 270->360 spins the short way */
       room: lv.goal === 'out' || !!lv.sandbox,     /* space round the maze to drive out */
       entered: inside(lv.start.x, lv.start.y),     /* own maze: a start outside comes in first */
+      moves: 0, turns: 0,                          /* for the tournament counters */
       trail: [],
     };
   }
@@ -325,6 +326,10 @@
     return world && world.n > 5 ? Math.round(base * Math.min(1, geom().cs / 57)) : base;
   };
 
+  /* One action. Returns true, false (a wall, or the robot refused), or
+   * 'silent': the real robot did not answer in time. Every move and turn
+   * that happened is counted for the tournament (world.moves, world.turns). */
+  let timeScale = 1;                       /* the self-test shortens the waits */
   async function perform(a, ctx) {
     const real = $('realChk').checked && port && !tooBigForBot();
 
@@ -333,8 +338,9 @@
     if (a.act === 'sense') {
       if (real) {
         send('WALLS');
-        const m = await expect(/^WALLS: F=(\d+)(\(wall\))? L=(\d+)(\(wall\))? R=(\d+)(\(wall\))?/, 4000);
-        ctx.walls = m ? { front: !!m[2], left: !!m[4], right: !!m[6] } : null;
+        const m = await expect(/^WALLS: F=(\d+)(\(wall\))? L=(\d+)(\(wall\))? R=(\d+)(\(wall\))?/, 4000 * timeScale);
+        if (!m) return 'silent';
+        ctx.walls = { front: !!m[2], left: !!m[4], right: !!m[6] };
       } else {
         ctx.walls = null;
       }
@@ -349,9 +355,11 @@
       world.angle += a.deg;
       if (real) {
         send('TURN ' + a.deg);
-        const m = await expect(/^TURN (done|rejected)/, 12000);
-        if (!m || m[1] !== 'done') return false;
+        const m = await expect(/^TURN (done|rejected)/, 12000 * timeScale);
+        if (!m) return 'silent';
+        if (m[1] !== 'done') return false;
       }
+      world.turns++;
       drawBot();
       if (!real) await sleep(stepMs() * 0.8);
       return true;
@@ -361,8 +369,9 @@
       const canGo = openSide(world, world.bot.d);
       if (real) {
         send('CELL');
-        const m = await expect(/^CELL (done|failed)/, 15000);
-        if (!m || m[1] !== 'done') return false;
+        const m = await expect(/^CELL (done|failed)/, 15000 * timeScale);
+        if (!m) return 'silent';
+        if (m[1] !== 'done') return false;
       } else if (!canGo) {
         return false;
       }
@@ -370,6 +379,7 @@
       world.bot.x += DX[world.bot.d];
       world.bot.y += DY[world.bot.d];
       if (world.inside(world.bot.x, world.bot.y)) world.entered = true;
+      world.moves++;
       world.trail.push(from);
       updateTrail();
       drawBot();
@@ -396,6 +406,7 @@
     highlight(value.b);
     const ok = await perform(value, session.ctx);
     if (!session.alive) return false;
+    if (ok === 'silent') { finish(false, 'botSilent'); return false; }
     if (!ok) { finish(false, 'failedWall'); return false; }
     if (reachedGoal()) { finish(true); return false; }
     return true;
@@ -478,9 +489,19 @@
   }
 
   let lastResult = null;
+  let lastStats = null;
+
+  /* What the tournament counts (docs/curriculum/anhang-turnier.md): blocks,
+   * cells driven, turns (all three turn blocks alike), and the drive-time
+   * points: 10 per cell, 8 per turn. */
+  function runStats() {
+    const moves = world.moves, turns = world.turns;
+    return { blocks: countBlocks(prog), moves, turns, points: 10 * moves + 8 * turns };
+  }
 
   function finish(win, failKey) {
     lastResult = { win: !!win, reason: failKey || (win ? 'goal' : 'failedEnd') };
+    lastStats = runStats();
     if (session) session.alive = false;
     session = null;
     highlight(null);
@@ -490,14 +511,21 @@
     if (win && lv.variants && variantIx < lv.variants.length) {
       variantIx++;                                    /* same program, next maze */
       world = buildWorld(lv, variantIx);
-      say(t('solved') + ' ' + (variantIx + 1) + '/' + (lv.variants.length + 1), 'win');
       drawMaze();
-      nextMaze = setTimeout(() => { nextMaze = null; startSession(); runAll(); }, 900);
+      const of = lv.variants.length + 1;
+      if ($('realChk').checked && port) {
+        /* a real robot never starts on its own: the pupil rebuilds the maze,
+           puts the robot back on the start, then presses Weiter */
+        say(t('solvedNext', { i: variantIx, n: of }), 'win', 'goOn', lastStats);
+      } else {
+        say(t('solved') + ' ' + variantIx + '/' + of, 'win', null, lastStats);
+        nextMaze = setTimeout(() => { nextMaze = null; startSession(); runAll(); }, 900);
+      }
       return;
     }
     if (win && lv.sandbox) {                          /* own maze: no stars, just the count */
       const used = countBlocks(prog);
-      say(t('solvedBlocks', { n: used, b: blocksWord(used) }), 'win');
+      say(t('solvedBlocks', { n: used, b: blocksWord(used) }), 'win', null, lastStats);
       celebrate();
     } else if (win) {
       const stars = starsFor(countBlocks(prog), lv.par);
@@ -505,11 +533,18 @@
       save();
       renderLevels();
       renderTask();                                   /* the header shows the new stars */
-      say(t('solvedStars', { n: stars }), 'win', levelIx < LEVELS.length - 1 ? 'next' : null);
+      say(t('solvedStars', { n: stars }), 'win', levelIx < LEVELS.length - 1 ? 'next' : null, lastStats);
       celebrate();
     } else {
-      say(t(failKey || 'failedEnd'), 'lose', 'again');
+      say(t(failKey || 'failedEnd'), 'lose', 'again', lastStats);
     }
+  }
+
+  /* ["6 Bausteine", "5 Felder", "3 Drehungen", "74 Fahrzeit-Punkte"] */
+  function statsParts(s) {
+    const w = (n, one, many) => n + ' ' + t(n === 1 ? one : many);
+    return [w(s.blocks, 'blockOne', 'blocksUsed'), w(s.moves, 'cellOne', 'cellMany'),
+            w(s.turns, 'turnOne', 'turnMany'), s.points + ' ' + t('points')];
   }
 
   const starsFor = (used, par) => (used <= par ? 3 : used <= Math.ceil(par * 1.7) ? 2 : 1);
@@ -1253,18 +1288,36 @@
     save();
   }
 
-  function say(msg, kind, action) {
+  /* The verdict bar: a message, after a run the tournament counters under
+   * it, and maybe one button (next task / try again / Weiter). */
+  function say(msg, kind, action, stats) {
     const v = $('verdict');
     v.textContent = '';
     v.className = 'verdict' + (kind ? ' ' + kind : '');
-    v.append(document.createTextNode(msg));
+    if (stats) {
+      const box = document.createElement('span');
+      box.className = 'msg';
+      const line = document.createElement('span');
+      line.className = 'stats';
+      statsParts(stats).forEach((part, i) => {          /* each count stays in one piece */
+        if (i) line.append(' \u00b7 ');
+        const s = document.createElement('span');
+        s.textContent = part;
+        line.append(s);
+      });
+      box.append(document.createTextNode(msg), line);
+      v.append(box);
+    } else {
+      v.append(document.createTextNode(msg));
+    }
     if (action) {
       const b = document.createElement('button');
       b.className = 'btn';
-      b.textContent = action === 'next' ? t('nextLevel') : t('tryAgain');
+      b.textContent = action === 'next' ? t('nextLevel') : action === 'goOn' ? t('goOn') : t('tryAgain');
       b.addEventListener('click', () => {
         hideVerdict();
         if (action === 'next') goLevel(Math.min(LEVELS.length - 1, levelIx + 1));
+        else if (action === 'goOn') { startSession(); runAll(); }
         else resetRun();
       });
       v.append(b);
@@ -1438,7 +1491,7 @@
       't-title': 'title', 't-tagline': 'tagline', 't-palette': 'palette', 't-program': 'program',
       't-start': 'startHere', 't-end': 'end', 't-trash': 'trash', 't-where': 'whereBot',
       't-speed': 'speed', 't-robotCard': 'robotCard', 't-sensorCard': 'sensorCard',
-      't-cellLabel': 'cellLabel', 't-save': 'save', 't-open': 'open',
+      't-cellLabel': 'cellLabel', 't-save': 'save', 't-open': 'open', 'driveLink': 'driveLink',
       't-sbWalls': 'sbWalls', 't-sbStart': 'sbStart', 't-sbGoal': 'sbGoal',
       'sbClear': 'sbClear', 'sbRandom': 'sbRandom',
     };
@@ -1539,6 +1592,22 @@
         get world() { return world; },
         get lastResult() { return lastResult; },
         get done() { return Object.assign({}, done); },
+        /* tournament counters of the last run: {blocks, moves, turns, points} */
+        get stats() { return lastStats && Object.assign({}, lastStats); },
+        /* A stand-in for the real robot: handler(line) gives the reply lines
+           ([] = silence), fed in like the serial reader does. null = off. */
+        fakeRobot(handler) {
+          if (!handler) { port = writer = null; rxWaiters = []; $('realChk').checked = false; return; }
+          port = { fake: true };
+          writer = {
+            write(text) {
+              const out = handler(text.replace(/\r?\n$/, '')) || [];
+              setTimeout(() => out.forEach((l) => { rxWaiters = rxWaiters.filter((w) => !w.try(l)); }), 1);
+            },
+          };
+          $('realChk').checked = true;
+        },
+        setTimeScale(s) { timeScale = s; },
         setFast(v) { fast = !!v; },
         clearResult() { lastResult = null; },
         goLevel, resetRun, runAll, countBlocks, starsFor,

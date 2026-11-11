@@ -67,7 +67,7 @@ vorgeführt wurde.
 | … eigene Klassen-Labyrinthe | | | | | |
 
 **Bekannte Bestwerte – nur für die Lehrkraft:** Aufgabe 1: 2 · Aufgabe 2: 5 · Aufgabe 3: 4
-(außen herum; die Abkürzung mit 3 zählt nicht) · Aufgabe 4: 4 · Aufgabe 5: **5** Bausteine
+(76 Fahrzeit-Punkte; die frühere Abkürzung ist seit November 2026 zugemauert) · Aufgabe 4: 4 · Aufgabe 5: **5** Bausteine
 (sicher, aber 122 Fahrzeit-Punkte) bzw. 74 Fahrzeit-Punkte mit 6 oder 7 Bausteinen · Die Ecke
 im Großen: 4 · Spirale: 5 Wände · Flut-Labyrinth A: 11 Bausteine, 100 Fahrzeit-Punkte. Wer einen
 dieser Werte schlägt, hat etwas entdeckt, das wir nicht kannten – bitte melden!

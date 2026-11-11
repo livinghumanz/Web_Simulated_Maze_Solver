@@ -1,0 +1,76 @@
+/* RatRocket Fernsteuerung - the remote-control page.
+ *
+ * Builds on code.css (tokens, rail, panel, buttons, segmented control, info
+ * tips), so both pages look like one product. Only the cross of big buttons
+ * and the layout around it live here. Sized for a phone (390 px) first: this
+ * page also runs over Bluetooth on phones.
+ */
+
+.drive .rail-end { margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
+.drive .seg-btn { white-space: nowrap; }
+
+.drive-main { max-width: 560px; margin: 0 auto; padding: 14px 16px 24px; }
+
+.drive-panel {
+  display: flex; flex-direction: column; align-items: center; gap: 18px;
+  padding: 16px 12px 18px;
+}
+
+.mode-hint {
+  margin: 0; display: flex; align-items: center; gap: 7px;
+  font-size: 13.5px; color: var(--ink-2); text-align: center;
+}
+
+/* ---------------- the cross ---------------- */
+.pad {
+  --pad-size: clamp(84px, 26vw, 118px);
+  display: grid; gap: 10px;
+  grid-template-columns: repeat(3, var(--pad-size));
+  grid-template-rows: repeat(3, var(--pad-size));
+  grid-template-areas: ". up ." "left stop right" ". down .";
+}
+.pad-up    { grid-area: up; }
+.pad-left  { grid-area: left; }
+.pad-right { grid-area: right; }
+.pad-down  { grid-area: down; }
+.pad-stop  { grid-area: stop; }
+
+.pad-btn, .pad-stop {
+  border: 0; cursor: pointer; color: #fff;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  font-family: var(--display); font-weight: 600; font-size: 14.5px;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  transition: transform .06s, box-shadow .06s, opacity .15s;
+}
+.pad-btn {
+  border-radius: 22px; background: var(--c-move);
+  box-shadow: 0 5px 0 #1f4f99;
+}
+.pad-btn svg { width: 46%; height: auto; fill: #fff; }
+.pad-btn:active:not(:disabled) { transform: translateY(4px); box-shadow: 0 1px 0 #1f4f99; }
+
+.pad-stop {
+  border-radius: 50%; background: var(--board);
+  box-shadow: 0 5px 0 var(--board-dk), 0 0 0 5px rgba(210, 43, 30, .14);
+  font-size: 18px; letter-spacing: .5px;
+}
+.pad-stop:active { transform: translateY(4px); box-shadow: 0 1px 0 var(--board-dk); }
+
+.pad-btn:disabled { opacity: .4; cursor: not-allowed; box-shadow: 0 5px 0 rgba(31, 79, 153, .4); }
+
+/* ---------------- step and speed ---------------- */
+.drive-opts { display: flex; flex-direction: column; gap: 10px; align-items: center; }
+.opt { display: flex; align-items: center; gap: 9px; }
+.opt-label { min-width: 52px; text-align: right; font-size: 14px; color: var(--ink-2); }
+.opt .seg-btn:disabled { opacity: .45; cursor: not-allowed; }
+
+.drive-status {
+  margin: 0; min-height: 2.9em; max-width: 340px; text-align: center;
+  font-family: var(--display); font-size: 15px; color: var(--ink);
+}
+.drive-status.bad { color: var(--board-dk); }
+
+@media (max-width: 420px) {
+  .opt-label { min-width: 0; }
+  .opt .seg-btn { padding: 6px 10px; }
+}

@@ -33,7 +33,7 @@ wie eine Vierteldrehung – ein Unterschied für die Unterschiede-Wand.
 
 **Material:** Laptops, Rekordtafel, Entdeckerheft, USB-Stick oder Schul-Plattform für
 Dateien; optional ein Tisch-Labyrinth im Aufbau von Aufgabe 3 (vier Wandstücke rund um das
-mittlere Feld).
+mittlere Feld und eines unten zwischen dem mittleren und dem rechten Feld).
 **Simulation / Roboter:** Simulation; Roboter nur als Bonus-Station.
 
 | Phase | Min | Ablauf |
@@ -43,7 +43,8 @@ mittlere Feld).
 | Erarbeitung II | 15 | **Labyrinth-Post:** Aufgabe 7 öffnen, Größe 3 × 3 oder 4 × 4, Werkzeug **Wände** (Linien anklicken) und **Ziel** (Stern setzen). Regel: 1. selbst lösen (beweist: lösbar), Bausteinzahl notieren; 2. alle Bausteine in „Zum Löschen hierher ziehen"; 3. **Speichern**, Datei umbenennen in `team-name-post1.json`; 4. Datei zum Nachbarteam (Stick/Plattform), dort **Öffnen** – das Labyrinth kommt mit. Ziel: die Bausteinzahl der Erbauer schlagen. Ganz ohne Dateien geht es auch: Plätze tauschen. |
 | Sicherung | 8 | Merksatz: *Eine Schleife wiederholt die Bausteine in ihrem Bauch. Kürzere Programme sind leichter zu lesen und zu prüfen.* Erste Einträge auf der Rekordtafel. Entdeckerheft. |
 
-Aufgabe 3 „Immer im Kreis" (das Mittelfeld ist rundum zu):
+Aufgabe 3 „Immer im Kreis" (das Mittelfeld ist rundum zu, und unten trennt eine Wand das
+mittlere vom rechten Feld – der einzige Weg zum Stern führt außen herum):
 
 ```
       0   1   2
@@ -52,7 +53,7 @@ Aufgabe 3 „Immer im Kreis" (das Mittelfeld ist rundum zu):
     +   +---+   +
   1 |   |###|   |
     +   +---+   +
-  0 | ^       * |
+  0 | ^     | * |
     +---+---+---+
 ```
 
@@ -65,10 +66,11 @@ wiederhole 3 mal
     drehe nach rechts
 ```
 
-**Achtung, Abkürzung:** `drehe nach rechts`, `fahre 1 Feld`, `fahre 1 Feld` erreicht den Stern
-mit 3 Bausteinen – die Software gibt 3 Sterne, obwohl die Aufgabe „einmal außen herum"
-verlangt. Wer das findet, wird gelobt und dann gefragt: *Hat das Programm die Aufgabe
-erfüllt – oder nur den Test bestanden?* Für die Rekordtafel gilt: außen herum.
+Ohne Schleife braucht der Weg außen herum 8 Bausteine (1 Stern) – die Schleife spart die
+Hälfte. Die kurze Abkürzung unten entlang (`drehe nach rechts`, `fahre 1 Feld`,
+`fahre 1 Feld`) endet seit November 2026 an der Wand unten: „Autsch …". Fahrzeit des
+erwarteten Programms: 6 Felder, 2 Drehungen, **76 Fahrzeit-Punkte** (die Software zeigt die
+Zahlen nach jedem Lauf an).
 
 **Knobelaufgabe (wirklich schwer):**
 - *Die Ecke im Großen:* Aufgabe 7, Größe 5 × 5, alle Wände weg (**Leeren**), Stern im Feld
@@ -138,6 +140,9 @@ Eine **Zählschleife** (`wiederhole n mal`) führt ihren Bauch eine feste Anzahl
 Sie macht Programme kürzer und – wichtiger – *veränderbar*: Ein längerer Gang braucht nur
 eine andere Zahl, nicht mehr Bausteine. Das Optimieren nach Bausteinzahl („Golf") und nach
 Fahrzeit sind zwei verschiedene Ziele; dass sie sich widersprechen können, ist eine echte
-Ingenieurserfahrung. Die Abkürzung in Aufgabe 3 ist ein Geschenk: Sie zeigt, dass ein
-automatischer Test (Stern erreicht) weniger prüft als die eigentliche Anforderung (außen
-herum) – ein Kernproblem der Software-Entwicklung.
+Ingenieurserfahrung. Bis November 2026 ließ sich Aufgabe 3 mit einer Abkürzung ohne Schleife
+lösen; jetzt versperrt eine Wand unten den Weg. Die alte Lücke ist trotzdem ein Geschenk: In
+Aufgabe 7 nachbauen (Mittelfeld zu, Stern unten rechts, keine Wand unten) und fragen: *Hat das
+Programm die Aufgabe erfüllt – oder nur den Test bestanden?* Ein automatischer Test (Stern
+erreicht) prüft weniger als die eigentliche Anforderung (außen herum) – ein Kernproblem der
+Software-Entwicklung.

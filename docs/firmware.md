@@ -206,7 +206,7 @@ Kept small on purpose:
 - A move is aborted ("following error") if a wheel falls ~37 mm behind its
   target (1000 counts at 26.9 counts/mm), e.g. when it is blocked.
 - Left motor reverse was repaired on 2026-11-07 (see hardware.md):
-  `MOTION_LEFT_CAN_REVERSE 0` in `motion.h`. Left wheel only drives forward or
+  `MOTION_LEFT_CAN_REVERSE 1 (both wheels reverse since the 2026-11-07 repair)` in `motion.h`. Left wheel only drives forward or
   coasts; left in-place turns are done as 270° right turns. Set the flag to 1
   after the repair.
 
