@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RatRocket Werkstatt</title>
+<link rel="stylesheet" href="code.css">
+<link rel="stylesheet" href="werkstatt.css">
+</head>
+<body class="ws">
+
+<header class="rail">
+  <a class="brand" href="code.html">
+    <img class="brand-bot" src="img/robot.png" alt="">
+    <span class="brand-text">
+      <strong data-t="title">RatRocket Werkstatt</strong>
+      <em data-t="tagline">Motoren, Regler, Kalibrieren</em>
+    </span>
+  </a>
+  <div class="rail-end">
+    <span class="link-state" id="linkState"><i class="dot"></i><span id="linkText">Nicht verbunden</span></span>
+    <button class="btn btn-primary" id="connectBtn" type="button">Roboter verbinden</button>
+    <button class="info" type="button" data-tip="i_connect" aria-label="Info">i</button>
+    <a class="btn btn-ghost btn-sm rail-link" href="learn.html" data-t="toLearn">Lernen</a>
+    <a class="btn btn-ghost btn-sm rail-link" href="code.html" data-t="toEditor">RatRocket Code</a>
+    <button class="btn btn-ghost" id="langBtn" type="button">English</button>
+  </div>
+</header>
+
+<nav class="w-tabs" role="tablist" data-al="tabsLbl" aria-label="Werkst&auml;tten">
+  <button class="w-tab" role="tab" type="button" id="tab-motor" data-tab="motor" aria-controls="pane-motor" aria-selected="true">
+    <span class="w-tab-n">1</span>
+    <span class="w-tab-txt"><b data-t="tabMotor">Motoren &amp; Pulse</b><small data-t="tabMotorSub">Stunde 11</small></span>
+  </button>
+  <button class="w-tab" role="tab" type="button" id="tab-pid" data-tab="pid" aria-controls="pane-pid" aria-selected="false" tabindex="-1">
+    <span class="w-tab-n">2</span>
+    <span class="w-tab-txt"><b data-t="tabPid">PID-Regler</b><small data-t="tabPidSub">Stunde 12</small></span>
+  </button>
+  <button class="w-tab" role="tab" type="button" id="tab-cal" data-tab="cal" aria-controls="pane-cal" aria-selected="false" tabindex="-1">
+    <span class="w-tab-n">3</span>
+    <span class="w-tab-txt"><b data-t="tabCal">Kalibrieren</b><small data-t="tabCalSub">Plus-Stunde P3</small></span>
+  </button>
+</nav>
+
+<main class="w-main">
+
+  <!-- ================= 1  Motoren & Pulse (motor-test mode, SW2) ================= -->
+  <section class="w-pane" id="pane-motor" role="tabpanel" aria-labelledby="tab-motor">
+    <div class="w-mode" id="mode-motor" data-pane="motor"></div>
+
+    <div class="w-grid w-grid-motor">
+      <section class="panel w-wheels">
+        <h2><span data-t="wheelsH">R&auml;der und Pulse</span><button class="info" type="button" data-tip="i_wheels" aria-label="Info">i</button></h2>
+        <div class="w-wheelrow">
+          <div class="w-wheel" id="wheelL" data-w="L"></div>
+          <div class="w-wheel" id="wheelR" data-w="R"></div>
+        </div>
+        <div class="w-actions">
+          <button class="w-hold" id="holdBtn" type="button">
+            <svg class="w-hold-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg>
+            <span class="w-hold-txt"><b data-t="hold">Dreh!</b><small data-t="holdSub">gedr&uuml;ckt halten</small></span>
+          </button>
+          <button class="btn w-act" id="pwm2Btn" type="button" data-t="pwm2">2 Sekunden</button>
+          <button class="btn btn-ghost w-act" id="enc0Btn" type="button" data-t="enc0">Z&auml;hler auf 0</button>
+          <button class="info" type="button" data-tip="i_hold" aria-label="Info">i</button>
+        </div>
+        <p class="w-status" id="st-motor" role="status" aria-live="polite"></p>
+      </section>
+
+      <section class="panel w-ppr">
+        <h2><span data-t="pprH">Pulse pro Umdrehung</span><button class="info" type="button" data-tip="i_ppr" aria-label="Info">i</button></h2>
+        <ol class="w-steps">
+          <li class="w-step" id="ppr-s1">
+            <span class="w-step-n">1</span>
+            <div class="w-step-body">
+              <p data-t="ppr1">F&auml;hnchen ans Rad. Welches Rad, wie viele Pulse?</p>
+              <div class="w-row">
+                <div class="seg" id="pprWheel" role="group">
+                  <button class="seg-btn" type="button" data-v="L" aria-pressed="true" data-t="segLeft">links</button>
+                  <button class="seg-btn" type="button" data-v="R" aria-pressed="false" data-t="segRight">rechts</button>
+                </div>
+                <div class="seg" id="pprN" role="group">
+                  <button class="seg-btn" type="button" data-v="1000" aria-pressed="false">1000</button>
+                  <button class="seg-btn" type="button" data-v="3000" aria-pressed="true">3000</button>
+                  <button class="seg-btn" type="button" data-v="6000" aria-pressed="false">6000</button>
+                </div>
+              </div>
+            </div>
+          </li>
+          <li class="w-step" id="ppr-s2">
+            <span class="w-step-n">2</span>
+            <div class="w-step-body">
+              <p data-t="ppr2">Das Rad dreht los &ndash; z&auml;hl mit!</p>
+              <div class="w-row">
+                <button class="btn btn-primary w-act" id="jogBtn" type="button" data-t="jogGo">Los!</button>
+                <span class="w-res" id="jogRes"></span>
+              </div>
+            </div>
+          </li>
+          <li class="w-step" id="ppr-s3">
+            <span class="w-step-n">3</span>
+            <div class="w-step-body">
+              <p data-t="ppr3">Wie viele Umdrehungen hast du gez&auml;hlt?</p>
+              <div class="w-row">
+                <input class="w-in w-in-s" id="pprTurns" type="text" inputmode="numeric" autocomplete="off" aria-label="Umdrehungen">
+                <span class="w-muted" data-t="turnsWhole">ganze</span>
+                <div class="seg" id="pprFrac" role="group">
+                  <button class="seg-btn" type="button" data-v="0" aria-pressed="true">+0</button>
+                  <button class="seg-btn" type="button" data-v="0.25" aria-pressed="false">+&frac14;</button>
+                  <button class="seg-btn" type="button" data-v="0.5" aria-pressed="false">+&frac12;</button>
+                  <button class="seg-btn" type="button" data-v="0.75" aria-pressed="false">+&frac34;</button>
+                </div>
+                <button class="info" type="button" data-tip="i_frac" aria-label="Info">i</button>
+              </div>
+              <div class="w-calc" id="pprCalc"></div>
+              <button class="btn btn-sm" id="pprAdd" type="button" data-t="pprAdd">In die Tabelle</button>
+            </div>
+          </li>
+        </ol>
+        <table class="w-table" id="pprTable">
+          <thead><tr><th>#</th><th data-t="thWheel">Rad</th><th data-t="thPulses">Pulse</th><th data-t="thTurns">Umdr.</th><th data-t="thPpr">Pulse/Umdr.</th></tr></thead>
+          <tbody id="pprBody"></tbody>
+          <tfoot>
+            <tr><td colspan="4" data-t="mean">Mittelwert</td><td id="pprMean">&ndash;</td></tr>
+            <tr><td colspan="4" data-t="spread">Streuung</td><td id="pprSpread">&ndash;</td></tr>
+          </tfoot>
+        </table>
+      </section>
+
+      <section class="panel w-sweep">
+        <h2><span data-t="sweepH">Tastgrad-Kurve</span><button class="info" type="button" data-tip="i_sweep" aria-label="Info">i</button></h2>
+        <div class="w-tools">
+          <button class="btn btn-primary w-act" id="sweepBtn" type="button" data-t="sweepGo">Kurve messen</button>
+          <span class="w-legend">
+            <span class="lg"><i class="lg-sw lg-l"></i><span data-t="wheelL">Linkes Rad</span></span>
+            <span class="lg"><i class="lg-sw lg-r"></i><span data-t="wheelR">Rechtes Rad</span></span>
+            <span class="lg" id="sweepLgPrev" hidden><i class="lg-sw lg-ghost"></i><span data-t="prevRun">vorige Messung</span></span>
+          </span>
+          <span class="w-muted w-freq" id="sweepFreq"></span>
+        </div>
+        <div class="w-scope"><svg class="w-chart" id="sweepChart" viewBox="0 0 640 300" role="img"></svg><div class="w-tt" hidden></div></div>
+        <p class="w-note" id="sweepNote"></p>
+        <details class="w-tablev">
+          <summary data-t="asTable">Als Tabelle</summary>
+          <table class="w-table">
+            <thead><tr><th data-t="xDuty">Tastgrad</th><th data-t="wheelL">Linkes Rad</th><th data-t="wheelR">Rechtes Rad</th></tr></thead>
+            <tbody id="sweepBody"></tbody>
+          </table>
+        </details>
+      </section>
+    </div>
+  </section>
+
+  <!-- ================= 2  PID (PID-test mode, SW1 + SW2) ================= -->
+  <section class="w-pane" id="pane-pid" role="tabpanel" aria-labelledby="tab-pid" hidden>
+    <div class="w-mode" id="mode-pid" data-pane="pid"></div>
+
+    <div class="w-grid w-grid-pid">
+      <section class="panel w-pidrun">
+        <h2><span data-t="pidRunH">Geradeaus-Test: 30 cm</span><button class="info" type="button" data-tip="i_pidRun" aria-label="Info">i</button></h2>
+        <div class="w-tools">
+          <button class="btn btn-go w-act" id="fwdBtn" type="button" data-t="fwdGo">Fahr 30 cm!</button>
+          <div class="seg" id="pidView" role="group">
+            <button class="seg-btn" type="button" data-v="v" aria-pressed="true" data-t="viewV">Tempo</button>
+            <button class="seg-btn" type="button" data-v="p" aria-pressed="false" data-t="viewP">Weg</button>
+            <button class="seg-btn" type="button" data-v="e" aria-pressed="false" data-t="viewE">Fehler</button>
+          </div>
+          <button class="info" type="button" data-tip="i_pidView" aria-label="Info">i</button>
+        </div>
+        <div class="w-legend">
+          <span class="lg" id="pidLgSoll"><i class="lg-sw lg-soll"></i><span data-t="lgSoll">Plan (Soll)</span></span>
+          <span class="lg"><i class="lg-sw lg-l"></i><span data-t="wheelL">Linkes Rad</span></span>
+          <span class="lg"><i class="lg-sw lg-r"></i><span data-t="wheelR">Rechtes Rad</span></span>
+          <span class="lg" id="pidLgPrev" hidden><i class="lg-sw lg-ghost"></i><span data-t="prevDrive">vorige Fahrt</span></span>
+        </div>
+        <div class="w-scope"><svg class="w-chart" id="pidChart" viewBox="0 0 640 300" role="img"></svg><div class="w-tt" hidden></div></div>
+        <div class="w-readouts">
+          <div class="w-ro"><span data-t="endErr">Fehler am Ende</span><b><i class="lg-sw lg-l"></i><span id="errL">&ndash;</span></b><b><i class="lg-sw lg-r"></i><span id="errR">&ndash;</span></b></div>
+          <div class="w-ro"><span data-t="maxErr">gr&ouml;&szlig;ter Fehler</span><b id="maxErr">&ndash;</b></div>
+        </div>
+        <table class="w-table w-runs">
+          <thead><tr><th data-t="thRun">Fahrt</th><th class="w-kh" data-k="KP">A</th><th class="w-kh" data-k="KI">B</th><th class="w-kh" data-k="KD">C</th><th data-t="thEndL">Ende L</th><th data-t="thEndR">Ende R</th><th data-t="thMax">gr&ouml;&szlig;ter</th></tr></thead>
+          <tbody id="runBody"></tbody>
+        </table>
+        <p class="w-status" id="st-pid" role="status" aria-live="polite"></p>
+      </section>
+
+      <section class="panel w-knobs" id="knobs">
+        <div class="w-phase">
+          <span class="w-phase-step is-on" id="phase1" data-t="phase1">1 &middot; nach Gef&uuml;hl</span>
+          <span class="w-phase-step" id="phase2" data-t="phase2">2 &middot; mit Namen</span>
+        </div>
+        <h2><span data-t="knobsH">Drei Drehkn&ouml;pfe</span><button class="info" type="button" data-tip="i_knobs" aria-label="Info">i</button></h2>
+        <div id="knobList"></div>
+        <div class="w-presets">
+          <span class="w-muted" data-t="presets">Fertig:</span>
+          <button class="btn btn-sm w-act" type="button" data-preset="soft" data-t="pSoft">zu weich</button>
+          <button class="btn btn-sm w-act" type="button" data-preset="sharp" data-t="pSharp">zackig</button>
+          <button class="btn btn-sm w-act" type="button" data-preset="factory" data-t="pFactory">Werkseinstellung</button>
+          <button class="info" type="button" data-tip="i_presets" aria-label="Info">i</button>
+        </div>
+        <button class="btn btn-primary w-reveal" id="revealBtn" type="button" data-t="reveal">Namen verraten</button>
+        <div class="w-more" id="moreKnobs" hidden>
+          <h3 data-t="moreH">Noch zwei Kn&ouml;pfe</h3>
+          <div id="moreList"></div>
+        </div>
+      </section>
+    </div>
+  </section>
+
+  <!-- ================= 3  Kalibrieren (maze mode, SW3) ================= -->
+  <section class="w-pane" id="pane-cal" role="tabpanel" aria-labelledby="tab-cal" hidden>
+    <div class="w-mode" id="mode-cal" data-pane="cal"></div>
+
+    <div class="w-grid w-grid-cal">
+      <nav class="w-wiznav" id="wizNav" data-al="wizLbl" aria-label="Kalibrier-Schritte">
+        <button class="w-wizcard" type="button" data-wiz="dist" aria-pressed="true">
+          <span class="w-step-n">1</span><span class="w-wiz-txt"><b data-t="wDist">Strecke</b><code>CALDIST</code></span><span class="w-wizstate"></span>
+        </button>
+        <button class="w-wizcard" type="button" data-wiz="trim" aria-pressed="false">
+          <span class="w-step-n">2</span><span class="w-wiz-txt"><b data-t="wTrim">Geradeaus</b><code>TRIM</code></span><span class="w-wizstate"></span>
+        </button>
+        <button class="w-wizcard" type="button" data-wiz="turn" aria-pressed="false">
+          <span class="w-step-n">3</span><span class="w-wiz-txt"><b data-t="wTurn">Drehen</b><code>TRACK</code></span><span class="w-wizstate"></span>
+        </button>
+        <button class="w-wizcard" type="button" data-wiz="kc" aria-pressed="false">
+          <span class="w-step-n">4</span><span class="w-wiz-txt"><b data-t="wKc">Mitte</b><code>KC</code></span><span class="w-wizstate"></span>
+        </button>
+      </nav>
+
+      <div class="w-wizwrap">
+        <!-- 1 Strecke: FWD, ruler, CALDIST -->
+        <section class="panel w-wiz" id="wiz-dist" data-wiz="dist">
+          <h2><span data-t="wDistH">Strecke kalibrieren</span><button class="info" type="button" data-tip="i_wDist" aria-label="Info">i</button></h2>
+          <ol class="w-steps">
+            <li class="w-step" data-s="1"><span class="w-step-n">1</span><div class="w-step-body"><p data-t="d1"></p></div></li>
+            <li class="w-step" data-s="2"><span class="w-step-n">2</span><div class="w-step-body">
+              <p data-t="d2"></p>
+              <div class="w-row">
+                <div class="seg" id="distLen" role="group">
+                  <button class="seg-btn" type="button" data-v="200" aria-pressed="false">20 cm</button>
+                  <button class="seg-btn" type="button" data-v="300" aria-pressed="true">30 cm</button>
+                  <button class="seg-btn" type="button" data-v="500" aria-pressed="false">50 cm</button>
+                </div>
+                <button class="btn btn-primary w-act" id="distGo" type="button" data-t="go">Fahr!</button>
+                <span class="w-res" id="distGoRes"></span>
+              </div>
+            </div></li>
+            <li class="w-step" data-s="3"><span class="w-step-n">3</span><div class="w-step-body">
+              <p data-t="d3"></p>
+              <div class="w-row">
+                <input class="w-in" id="distMeas" type="text" inputmode="decimal" autocomplete="off" aria-label="mm">
+                <span class="w-muted" data-t="mm">mm</span>
+              </div>
+              <div class="w-calc" id="distCalc"></div>
+              <div class="w-row">
+                <button class="btn btn-primary w-act" id="distApply" type="button" data-t="apply">&Uuml;bernehmen</button>
+                <span class="w-res" id="distApplyRes"></span>
+              </div>
+            </div></li>
+            <li class="w-step" data-s="4"><span class="w-step-n">4</span><div class="w-step-body">
+              <p data-t="retest"></p>
+              <div class="w-save" data-save="dist"></div>
+            </div></li>
+          </ol>
+        </section>
+
+        <!-- 2 Geradeaus: FWD along a line, sideways offset, TRIM -->
+        <section class="panel w-wiz" id="wiz-trim" data-wiz="trim" hidden>
+          <h2><span data-t="wTrimH">Geradeaus fahren</span><button class="info" type="button" data-tip="i_wTrim" aria-label="Info">i</button></h2>
+          <ol class="w-steps">
+            <li class="w-step" data-s="1"><span class="w-step-n">1</span><div class="w-step-body"><p data-t="t1"></p></div></li>
+            <li class="w-step" data-s="2"><span class="w-step-n">2</span><div class="w-step-body">
+              <p data-t="t2"></p>
+              <div class="w-row">
+                <div class="seg" id="trimLen" role="group">
+                  <button class="seg-btn" type="button" data-v="500" aria-pressed="true">50 cm</button>
+                  <button class="seg-btn" type="button" data-v="800" aria-pressed="false">80 cm</button>
+                </div>
+                <button class="btn btn-primary w-act" id="trimGo" type="button" data-t="go">Fahr!</button>
+                <span class="w-res" id="trimGoRes"></span>
+              </div>
+            </div></li>
+            <li class="w-step" data-s="3"><span class="w-step-n">3</span><div class="w-step-body">
+              <p data-t="t3"></p>
+              <div class="w-row">
+                <input class="w-in" id="trimOff" type="text" inputmode="decimal" autocomplete="off" aria-label="mm">
+                <span class="w-muted" data-t="mm">mm</span>
+                <div class="seg" id="trimSide" role="group">
+                  <button class="seg-btn" type="button" data-v="L" aria-pressed="true" data-t="sideL">links daneben</button>
+                  <button class="seg-btn" type="button" data-v="R" aria-pressed="false" data-t="sideR">rechts daneben</button>
+                </div>
+              </div>
+              <div class="w-calc" id="trimCalc"></div>
+              <div class="w-row">
+                <button class="btn btn-primary w-act" id="trimApply" type="button" data-t="apply">&Uuml;bernehmen</button>
+                <span class="w-res" id="trimApplyRes"></span>
+              </div>
+            </div></li>
+            <li class="w-step" data-s="4"><span class="w-step-n">4</span><div class="w-step-body">
+              <p data-t="retest"></p>
+              <div class="w-save" data-save="trim"></div>
+            </div></li>
+          </ol>
+        </section>
+
+        <!-- 3 Drehen: TURN 360 both ways, observed error, TRACK -->
+        <section class="panel w-wiz" id="wiz-turn" data-wiz="turn" hidden>
+          <h2><span data-t="wTurnH">Drehen kalibrieren</span><button class="info" type="button" data-tip="i_wTurn" aria-label="Info">i</button></h2>
+          <ol class="w-steps">
+            <li class="w-step" data-s="1"><span class="w-step-n">1</span><div class="w-step-body"><p data-t="u1"></p></div></li>
+            <li class="w-step" data-s="2"><span class="w-step-n">2</span><div class="w-step-body">
+              <p data-t="u2"></p>
+              <div class="w-row">
+                <button class="btn btn-primary w-act" id="turnRGo" type="button"><span class="w-turnico">&#8635;</span> <span data-t="turnR">Rechtsherum 360&deg;</span></button>
+                <span class="w-res" id="turnRRes"></span>
+              </div>
+              <div class="w-row">
+                <span class="w-muted" data-t="howFar">Wo bleibt der Pfeil stehen?</span>
+                <input class="w-in w-in-s" id="turnRDeg" type="text" inputmode="decimal" autocomplete="off" aria-label="Grad"><span class="w-muted">&deg;</span>
+                <div class="seg" id="turnRDir" role="group">
+                  <button class="seg-btn" type="button" data-v="short" aria-pressed="false" data-t="short">zu kurz</button>
+                  <button class="seg-btn" type="button" data-v="exact" aria-pressed="false" data-t="exact">genau</button>
+                  <button class="seg-btn" type="button" data-v="far" aria-pressed="true" data-t="far">zu weit</button>
+                </div>
+              </div>
+            </div></li>
+            <li class="w-step" data-s="3"><span class="w-step-n">3</span><div class="w-step-body">
+              <p data-t="u3"></p>
+              <div class="w-row">
+                <button class="btn btn-primary w-act" id="turnLGo" type="button"><span class="w-turnico">&#8634;</span> <span data-t="turnL">Linksherum 360&deg;</span></button>
+                <span class="w-res" id="turnLRes"></span>
+              </div>
+              <div class="w-row">
+                <span class="w-muted" data-t="howFar">Wo bleibt der Pfeil stehen?</span>
+                <input class="w-in w-in-s" id="turnLDeg" type="text" inputmode="decimal" autocomplete="off" aria-label="Grad"><span class="w-muted">&deg;</span>
+                <div class="seg" id="turnLDir" role="group">
+                  <button class="seg-btn" type="button" data-v="short" aria-pressed="false" data-t="short">zu kurz</button>
+                  <button class="seg-btn" type="button" data-v="exact" aria-pressed="false" data-t="exact">genau</button>
+                  <button class="seg-btn" type="button" data-v="far" aria-pressed="true" data-t="far">zu weit</button>
+                </div>
+              </div>
+            </div></li>
+            <li class="w-step" data-s="4"><span class="w-step-n">4</span><div class="w-step-body">
+              <div class="w-calc" id="turnCalc"></div>
+              <div class="w-row">
+                <button class="btn btn-primary w-act" id="turnApply" type="button" data-t="apply">&Uuml;bernehmen</button>
+                <span class="w-res" id="turnApplyRes"></span>
+              </div>
+            </div></li>
+            <li class="w-step" data-s="5"><span class="w-step-n">5</span><div class="w-step-body">
+              <p data-t="retest"></p>
+              <div class="w-save" data-save="turn"></div>
+            </div></li>
+          </ol>
+        </section>
+
+        <!-- 4 Mitte: CALSPIN, CENTER, CELL, KC -->
+        <section class="panel w-wiz" id="wiz-kc" data-wiz="kc" hidden>
+          <h2><span data-t="wKcH">In der Mitte fahren</span><button class="info" type="button" data-tip="i_wKc" aria-label="Info">i</button></h2>
+          <ol class="w-steps">
+            <li class="w-step" data-s="1"><span class="w-step-n">1</span><div class="w-step-body">
+              <p data-t="k1"></p>
+              <div class="w-row">
+                <button class="btn btn-primary w-act" id="kcLearn" type="button" data-t="learn">Mitte lernen</button>
+                <span class="w-res" id="kcLearnRes"></span>
+              </div>
+            </div></li>
+            <li class="w-step" data-s="2"><span class="w-step-n">2</span><div class="w-step-body">
+              <p data-t="k2"></p>
+              <div class="w-row">
+                <button class="btn btn-primary w-act" id="kcCenter" type="button" data-t="center">In die Mitte</button>
+                <span class="w-res" id="kcCenterRes"></span>
+              </div>
+            </div></li>
+            <li class="w-step" data-s="3"><span class="w-step-n">3</span><div class="w-step-body">
+              <p data-t="k3"></p>
+              <div class="w-row">
+                <button class="btn btn-primary w-act" id="kcCell" type="button" data-t="cell">Ein Feld</button>
+                <span class="w-res" id="kcCellRes"></span>
+              </div>
+              <div class="w-row">
+                <div class="seg" id="kcObs" role="group">
+                  <button class="seg-btn" type="button" data-v="weave" aria-pressed="false" data-t="obsWeave">schl&auml;ngelt</button>
+                  <button class="seg-btn" type="button" data-v="drift" aria-pressed="false" data-t="obsDrift">driftet zur Wand</button>
+                  <button class="seg-btn" type="button" data-v="good" aria-pressed="false" data-t="obsGood">f&auml;hrt in der Mitte</button>
+                </div>
+              </div>
+              <div class="w-calc" id="kcCalc"></div>
+              <div class="w-row">
+                <button class="btn btn-primary w-act" id="kcApply" type="button" data-t="apply">&Uuml;bernehmen</button>
+                <span class="w-res" id="kcApplyRes"></span>
+              </div>
+            </div></li>
+            <li class="w-step" data-s="4"><span class="w-step-n">4</span><div class="w-step-body">
+              <p data-t="retest"></p>
+              <div class="w-save" data-save="kc"></div>
+            </div></li>
+          </ol>
+        </section>
+        <p class="w-status" id="st-cal" role="status" aria-live="polite"></p>
+      </div>
+
+      <aside class="panel w-cfg">
+        <h2><span data-t="cfgH">Im Roboter eingestellt</span><button class="info" type="button" data-tip="i_cfg" aria-label="Info">i</button></h2>
+        <dl class="w-kv">
+          <div><dt data-t="kvScale">Strecken-Skala</dt><dd id="kvScale">&ndash;</dd></div>
+          <div><dt data-t="kvTrim">Trim</dt><dd id="kvTrim">&ndash;</dd></div>
+          <div><dt data-t="kvTrack">Spurbreite</dt><dd id="kvTrack">&ndash;</dd></div>
+          <div><dt data-t="kvKc">Mitte KC p / d</dt><dd id="kvKc">&ndash;</dd></div>
+        </dl>
+        <button class="btn btn-sm w-act" id="cfgBtn" type="button" data-t="cfgRead">Neu lesen</button>
+        <pre class="w-cfgpre" id="cfgPre"></pre>
+      </aside>
+    </div>
+  </section>
+
+  <details class="w-log" id="logBox">
+    <summary data-t="logH">Mitschrift: was der Roboter sagt</summary>
+    <pre id="logPre"></pre>
+  </details>
+</main>
+
+<button class="w-stop" id="stopBtn" type="button"><span data-t="stop">STOPP</span></button>
+
+<div class="tip" id="tip" hidden></div>
+<pre class="w-selftest" id="selftest" hidden></pre>
+
+<script src="werkstatt-data.js"></script>
+<script src="werkstatt.js"></script>
+</body>
+</html>
