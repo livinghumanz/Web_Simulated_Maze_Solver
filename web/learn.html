@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RatRocket Lernen</title>
+<link rel="stylesheet" href="learn.css">
+</head>
+<body>
+
+<!-- The robot seen from above, facing "up" (-y), like in code.html. 100 units =
+     wheel to wheel (about 100 mm). Origin is the wheel axle. learn.js moves,
+     turns and scales it; the Lexikon figures use it too. -->
+<svg width="0" height="0" aria-hidden="true" style="position:absolute">
+  <defs>
+    <g id="bot">
+      <image href="img/robot-maze.png" x="-50" y="-79.1" width="100" height="113.3"/>
+    </g>
+  </defs>
+</svg>
+
+<header class="rail">
+  <a class="brand" href="#" id="brandBtn">
+    <img class="brand-bot" src="img/robot.png" alt="">
+    <span class="brand-text">
+      <strong data-t="title">RatRocket Lernen</strong>
+      <em data-t="tagline">So funktioniert dein Roboter</em>
+    </span>
+  </a>
+
+  <nav class="tabs" aria-label="Bereiche">
+    <a class="tab" href="#" id="tabTopics" data-t="navTopics">Themen</a>
+    <a class="tab" href="#lexikon" id="tabLex" data-t="navLex">Lexikon</a>
+  </nav>
+
+  <div class="rail-end">
+    <a class="btn btn-ghost btn-link" href="code.html" data-t="toEditor">Zum Editor</a>
+    <button class="btn btn-ghost" id="langBtn" type="button">English</button>
+  </div>
+</header>
+
+<main id="view" class="view" tabindex="-1"></main>
+
+<div class="tip" id="tip" hidden></div>
+<pre id="selftest" class="selftest" hidden></pre>
+
+<script src="learn-data.js"></script>
+<script src="learn.js"></script>
+</body>
+</html>
