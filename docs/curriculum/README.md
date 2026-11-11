@@ -28,7 +28,7 @@ Sensoren.
  6  Eigenes Spielzeug                     Woche 8 (+11)     verfügbar       freies Baufenster: geplant
  5  Regeln: PID nach Gefühl, dann benannt Woche 6           verfügbar       PID-Panel: geplant
  4  Motoren: Umdrehung, Pulse, PWM        Woche 6           verfügbar       Motor-Panel: geplant
-    ... die Bausteine werden mächtiger:   Woche 3-8         verfügbar       Variablen: verfügbar; Listen: geplant
+    ... die Bausteine werden mächtiger:   Woche 3-8         verfügbar       Variablen, Listen, eigene Bausteine, Karte: verfügbar
         Schleifen, Sensoren, Wandfolger,
         Turnier, Karten, Zahlenflut
  3  Bluetooth einstecken, fernsteuern     Woche 2           verfügbar       verfügbar (Fernsteuerung)
@@ -55,8 +55,8 @@ Sensoren.
 | 4 | [Sensoren und Entscheidungen](modul-4-sensoren.md) | C · 1 | 9–14 | 1 (+P2) | 3 | verfügbar |
 | 5 | [Raus hier! Wandfolger und Turnierwoche](modul-5-raus-hier.md) | D · 1 | 10–14 | 4 | 4–5 | verfügbar |
 | 6 | [Werkstatt: Motoren, Messen, Regeln](modul-6-werkstatt.md) | E · 4 · 5 | 11–16 | 2 (+P3) | 6 | Roboter verfügbar; Werkstatt, Panels, parametrische Bausteine, Gyro geplant |
-| 7 | [Karten und Gedächtnis](modul-7-karten-und-gedaechtnis.md) | F | 11–15 | 1 (+P4) | 7 | Unplugged, Roboter-Karte und Variablen (Aufgabe 8, 9) verfügbar; Listen geplant |
-| 8 | [Flood-Fill: der kürzeste Weg](modul-8-flood-fill.md) | G | 11–18 | 2 (+P5–P7) | 7–8 (+9–10) | Unplugged und `GO`/`GOTO` verfügbar; selbst bauen geplant |
+| 7 | [Karten und Gedächtnis](modul-7-karten-und-gedaechtnis.md) | F | 11–15 | 1 (+P4) | 7 | Unplugged, Roboter-Karte, Variablen (Aufgabe 8, 9), Listen, eigene Bausteine und Karten-Bausteine (Aufgabe 7) verfügbar |
+| 8 | [Flood-Fill: der kürzeste Weg](modul-8-flood-fill.md) | G | 11–18 | 2 (+P5–P7) | 7–8 (+9–10) | Unplugged, `GO`/`GOTO` und die Flut selbst bauen (Karten-Bausteine, Aufgabe 7) verfügbar |
 | 9 | [Dein eigenes Spielzeug](modul-9-eigenes-spielzeug.md) | 6 | 10–16 | 1 (+P8–P9) | 8 (+11) | heute mit Aufgabe 7; freies Baufenster, Programme auf dem Roboter geplant |
 | 10 | [Wettbewerb und Forschung](modul-10-wettbewerb-und-forschung.md) | H | 15–Hochschule | Projekt, 6–10 Doppelstunden | Anschluss | Klassen-Micromouse und C-Firmware verfügbar; Textprogrammierung geplant |
 
@@ -80,8 +80,8 @@ Sensoren.
 | 7 | 14 | Die Zahlenflut | unplugged | – | verfügbar |
 | 8 | 15 | Der Roboter rechnet selbst | Aufgabe 7, `GO`/`GOTO` | Demo | verfügbar |
 | 8 | 16 | Spielzeug-Werkstatt und Mini-Messe | Aufgabe 7, Befehle | Teams | verfügbar; Baufenster geplant |
-| Plus | P1–P4 | Golf und Fahrzeit · Sensoren entscheiden · Drehen kalibrieren · Brotkrumen, Variablen | Aufgabe 3, 4, 7, 8, 9 | ja | verfügbar (P4-Listen geplant) |
-| Ausbau | P5–P9 | Flut selbst bauen · Projekt im freien Baufenster | – | ja | **geplant** |
+| Plus | P1–P4 | Golf und Fahrzeit · Sensoren entscheiden · Drehen kalibrieren · Brotkrumen, Variablen | Aufgabe 3, 4, 7, 8, 9 | ja | verfügbar |
+| Ausbau | P5–P9 | Flut selbst bauen · Projekt im freien Baufenster | Aufgabe 7 (Karten-Bausteine) | ja | P5–P7 verfügbar; P8–P9 **geplant** |
 
 **Kürzen auf 12 Stunden:** Stunde 3+4, 9+10, 11+12 und 13+14 jeweils zu einer Stunde
 zusammenlegen (Modi als 10-Minuten-Demo, Turnier nur Escape-Cup, Werkstatt nur Pulse und das
@@ -150,10 +150,11 @@ unbekannte Labyrinthe an.
 
 - **verfügbar** – heute im Repository vorhanden und erprobt.
 - **geplant – Stand November 2026** – noch nicht gebaut: Werkstatt (Kalibrier-Werkstätten
-  Strecke, Drehung, PID, Gyro), parametrische Bausteine (cm, Grad, Tempo), Listen und eigene
-  Funktionen, Textprogrammierung, Programme auf dem Roboter, freies Baufenster, Motor- und
-  PID-Panel, deutsche Roboter-Info. (Variablen und die Fernsteuerung sind inzwischen
-  **verfügbar**.)
+  Strecke, Drehung, PID, Gyro), parametrische Bausteine (cm, Grad, Tempo),
+  Textprogrammierung, Programme auf dem Roboter, freies Baufenster, Motor- und
+  PID-Panel, deutsche Roboter-Info. (Variablen, Listen, eigene Bausteine, Karten-Bausteine und
+  die Fernsteuerung sind inzwischen **verfügbar**.)
+- **Profi-Wörter** (Knopf oben in RatRocket Code): die Bausteine zeigen `if`, `else`, `repeat`, `set` … – die Brücke zur Textprogrammierung.
 - **im Aufbau – Stand November 2026** – die Erklär-Seiten `web/learn.html`.
 - Geprüft gegen den Software-Stand vom 11.11.2026: Alle Aufgaben starten im Feld unten links
   mit Blick nach oben; Aufgabe 7 hat die Werkzeuge **Wände**, **Start**, **Ziel**, **Größe**
@@ -173,11 +174,10 @@ Mathematik (Kreisumfang, Dreisatz, Mittelwert) und Physik (Schall, Reibung, Rege
 
 ## Für das RatRocket-Team: was den Kurs am meisten erweitert
 
-1. **Listen und eigene Funktionen** (ein günstiger erster Schritt: Karten-Bausteine wie
-   „Zahl vorne") – macht Woche 7 ganz zur Hands-on-Woche und schaltet den Ausbau P5–P7 frei
-   (etwa **+2 Wochen**); ohne sie können Kinder unter 15 die Zahlenflut nicht selbst bauen.
-   **Variablen sind erledigt** (November 2026): `setze`, `ändere`, `zeige`, Vergleiche in
-   `wenn` und `wiederhole bis`, Aufgaben 8 und 9.
+1. ~~Listen und eigene Funktionen~~ – **erledigt** (November 2026): Variablen, Listen, eigene
+   Bausteine („Meine Bausteine") und Karten-Bausteine (`merke Wände hier`, Zahl von Feld,
+   `offen laut Karte`) in Aufgabe 7 – die Zahlenflut lässt sich aus Bausteinen bauen; Woche 7 ist
+   Hands-on, der Ausbau P5–P7 ist frei. Offen: Parameter für eigene Bausteine.
 2. **Freies Baufenster und Programme auf dem Roboter** – schaltet P8–P9 frei (**+1–2 Wochen**)
    und macht das Abschlussprojekt und die Klassen-Micromouse autonom.
 3. **Werkstatt-Oberfläche mit Motor-Panel und PID-Panel** (Roboter-Seite existiert) – macht
@@ -215,8 +215,9 @@ the right-hand wall follower with a file-based class tournament, a workshop on m
 PID, maps and memory, flood fill (unplugged, then the robot's built-in solver via `GO`/`GOTO`),
 and a final toy project. Weeks 1–5 run entirely on today's software; weeks 6–8 run today with
 typed robot commands, unplugged activities and teacher demos, and become hands-on once the
-planned features land (Werkstatt, motor/PID panels, lists and own functions, free-build window,
-programs stored on the robot). Variables (tasks 8 and 9) and the remote-control page
+planned features land (Werkstatt, motor/PID panels, free-build window, programs stored on the
+robot). Variables (tasks 8 and 9), lists, own blocks and map blocks (task 7: pupils can build
+the flood fill from blocks), the "Profi-Wörter" keyword mode and the remote-control page
 (`web/drive.html`) are already available. Every lesson has a genuinely hard challenge tier, an explorer
 journal entry and a record board, so fast learners stay engaged for the full eight weeks.
 Everything not yet built is labelled "geplant – Stand November 2026".

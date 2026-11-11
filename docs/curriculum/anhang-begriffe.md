@@ -21,14 +21,16 @@ where one exists.
 | `vorne frei` / `vorne Wand` | front is free / wall ahead | S | Ist vor dem Roboter in seinem Feld eine Wand oder nicht? |
 | `rechts frei` / `rechts Wand` | right is free / wall right | S | Dasselbe auf seiner rechten Seite. |
 | `links frei` / `links Wand` | left is free / wall left | S | Dasselbe auf seiner linken Seite. |
-| Fahren · Wiederholen · Entscheiden · Variablen | Drive · Repeat · Decide · Variables | S | Die vier Farb-Gruppen der Bausteine. |
+| Fahren · Wiederholen · Entscheiden · Variablen (Aufgabe 7: dazu Listen · Karte · Meine Bausteine) | Drive · Repeat · Decide · Variables (task 7: also Lists · Map · My blocks) | S | Die Farb-Gruppen der Bausteine. |
 | Bauch | belly | S | Der Platz in einem Baustein, in den andere Bausteine kommen. |
 | Variable | variable | S | Ein Zettel mit Namen, auf dem sich das Programm eine Zahl merkt. Bei jedem Start steht 0 darauf. |
 | `setze` … `auf` … / `ändere` … `um` … | set … to … / change … by … | S | Schreibt eine Zahl auf den Zettel / zählt etwas dazu (mit −1 weg). |
 | `zeige` … | show … | S | Der Roboter zeigt in einer Sprechblase, was auf dem Zettel steht. |
 | `=` `>` `<` | = > < | S | gleich, größer als, kleiner als – so vergleicht man eine Variable mit einer Zahl. |
-| Liste | list | G | Viele Zettel in einer Reihe – zum Beispiel alle Richtungen, die der Roboter gefahren ist. |
-| eigene Funktion | own function | G | Ein selbst gebauter Baustein, der aus anderen Bausteinen besteht. |
+| Liste (`füge … zu … hinzu`, `Element … von …`, `Länge von …`) | list (add … to …, item … of …, length of …) | S | Viele Zettel in einer Reihe – zum Beispiel alle Richtungen, die der Roboter gefahren ist. Element 1 ist das erste. |
+| eigener Baustein (Meine Bausteine, `definiere …`) | own block (My blocks, define …) | S | Ein selbst gebauter Baustein, der aus anderen Bausteinen besteht – in echten Sprachen eine *Funktion*. |
+| Karten-Bausteine (`merke Wände hier`, Zahl von Feld, `offen laut Karte`) | map blocks (remember walls here, number of cell, open on map) | S | Das Gedächtnis des Roboters als Bausteine: Wände merken, Zahlen in Felder schreiben – damit baust du die Zahlenflut selbst. |
+| Profi-Wörter | Pro words | S | Knopf oben: Die Bausteine zeigen die Wörter echter Programmiersprachen (`if`, `else`, `repeat`, `set` …). |
 | parametrischer Baustein (`fahre … cm`, `drehe … Grad`) | parametric block | G | Ein Baustein mit Zahl, z. B. „fahre 30 cm" statt „fahre 1 Feld". |
 
 ## Knöpfe und Meldungen in RatRocket Code

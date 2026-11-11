@@ -38,6 +38,12 @@
   --c-decide:  #7b4bc9;
   --c-var:     #d8690b;   /* Scratch-like orange, dark enough for white text */
   --c-var-lt:  #fbe4d0;
+  --c-func:    #b83280;   /* Meine Bausteine: Scratch-like pink */
+  --c-func-lt: #f8dcec;
+  --c-list:    #b8461b;   /* Listen: a deeper orange, kin to the variables (as in Scratch) */
+  --c-list-lt: #f6dccf;
+  --c-map:     #0d7680;   /* Karte: sea-chart teal */
+  --c-map-lt:  #d2edf0;
 
   --r:   10px;
   --rb:  13px;
@@ -46,6 +52,8 @@
 
   --ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --display: "Fredoka", "Trebuchet MS", var(--ui);
+  /* Profi-Woerter: keywords look like code (system fonts only, offline) */
+  --code: ui-monospace, "Cascadia Mono", "Cascadia Code", Consolas, "SF Mono", Menlo, monospace;
 }
 
 * { box-sizing: border-box; }
@@ -115,6 +123,14 @@ button, input, select { font: inherit; color: inherit; }
 
 .rail-end { display: flex; align-items: center; gap: 8px; }
 .rail-link { text-decoration: none; }
+.rail-links { display: inline-flex; align-items: center; gap: 4px; }
+/* a button and its i wrap as one */
+.rail-pair { display: inline-flex; align-items: center; gap: 5px; }
+
+/* Profi-Woerter switch: dark when on, like code on a screen */
+.profi-ico { font: 700 12px/1 var(--code); letter-spacing: -.05em; color: var(--ink-2); }
+.profi-btn[aria-pressed="true"] { background: var(--stage); border-color: var(--stage); color: #fff; }
+.profi-btn[aria-pressed="true"] .profi-ico { color: var(--pad); }
 
 .link-state { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); }
 .dot { width: 9px; height: 9px; border-radius: 50%; background: #b9c1cd; flex: none; }
@@ -216,26 +232,31 @@ button, input, select { font: inherit; color: inherit; }
 }
 .cat-blocks { display: flex; flex-direction: column; gap: 7px; }
 
-/* Variablen: "Neue Variable", its little name field, the names (x deletes) */
+/* Variablen / Meine Bausteine: "Neue Variable", its little name field, the
+   names (x deletes). Each box tints the tool in its own colour (--k). */
+.cat-var  { --k: var(--c-var);  --k-lt: var(--c-var-lt);  --k-pale: #fff7ef; --k-dk: #9c4705; }
+.cat-func { --k: var(--c-func); --k-lt: var(--c-func-lt); --k-pale: #fdf2f8; --k-dk: #8a1f5c; }
+.cat-list { --k: var(--c-list); --k-lt: var(--c-list-lt); --k-pale: #fdf3ee; --k-dk: #85300f; }
+.cat-map  { --k: var(--c-map);  --k-lt: var(--c-map-lt);  --k-pale: #eef8f9; --k-dk: #075158; }
 .var-tools { display: flex; flex-direction: column; gap: 7px; }
 .var-add {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   width: 100%; padding: 8px 10px; cursor: pointer;
-  border: 1.5px dashed var(--c-var); border-radius: var(--rb);
-  background: #fff7ef; color: #9c4705;
+  border: 1.5px dashed var(--k); border-radius: var(--rb);
+  background: var(--k-pale); color: var(--k-dk);
   font: 500 13.5px var(--display);
 }
-.var-add:hover { background: var(--c-var-lt); }
+.var-add:hover { background: var(--k-lt); }
 .var-add .ico { stroke-width: 2.2; }
 .var-new { display: flex; gap: 4px; }
 .var-new input {
   flex: 1; min-width: 0; padding: 6px 8px;
-  border: 1.5px solid var(--c-var); border-radius: 8px; background: var(--panel);
+  border: 1.5px solid var(--k); border-radius: 8px; background: var(--panel);
   font: 500 14px var(--display);
 }
 .var-ok {
   padding: 0 9px; border: 0; border-radius: 8px; cursor: pointer;
-  background: var(--c-var); color: #fff; font: 600 13px var(--display);
+  background: var(--k); color: #fff; font: 600 13px var(--display);
 }
 .var-x {
   width: 30px; padding: 0; cursor: pointer;
@@ -248,8 +269,21 @@ button, input, select { font: inherit; color: inherit; }
 .var-chip {
   display: inline-flex; align-items: center; gap: 1px;
   padding: 2px 2px 2px 9px; border-radius: 99px;
-  background: var(--c-var-lt); color: #7a3804; font: 500 13px var(--display);
+  background: var(--k-lt); color: var(--k-dk); font: 500 13px var(--display);
 }
+
+/* value pills ("Laenge von Weg", later "mein x"): dragged onto a number field */
+.val-pills { display: flex; flex-wrap: wrap; gap: 5px; }
+.val-pill {
+  display: inline-block; padding: 4px 11px; border-radius: 99px;
+  background: var(--k); color: #fff; cursor: grab; touch-action: none;
+  font: 500 13px var(--display); white-space: nowrap;
+  user-select: none; -webkit-user-select: none;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .28);
+}
+.ghost .val-pill { box-shadow: 0 0 0 2px #fff; }
+/* the number field a pill would land on */
+.slot-hot { outline: 3px solid var(--pad); outline-offset: 1px; border-radius: 8px; }
 .var-del {
   width: 21px; height: 21px; padding: 0; border: 0; border-radius: 50%;
   background: transparent; color: inherit; cursor: pointer; font: 600 14px/1 var(--ui);
@@ -278,11 +312,30 @@ button, input, select { font: inherit; color: inherit; }
 }
 .blk .glyph { font-size: 18px; line-height: 1; opacity: .92; }
 .blk .lbl { white-space: nowrap; }
+/* Profi-Woerter: a keyword (if, repeat, set ...) set as code */
+.blk .kw { font: 700 .93em var(--code); letter-spacing: -.02em; }
 
 .blk.cat-move   { --c: var(--c-move); }
 .blk.cat-loop   { --c: var(--c-loop); }
 .blk.cat-decide { --c: var(--c-decide); }
 .blk.cat-var    { --c: var(--c-var); }
+.blk.cat-func   { --c: var(--c-func); }
+.blk.cat-list   { --c: var(--c-list); }
+.blk.cat-map    { --c: var(--c-map); }
+.blk .fname { font-weight: 600; }
+
+/* an own block's definition under the program: a pink "hat" with a belly,
+   and x to delete it (only while no block uses it) */
+.defs { display: flex; flex-direction: column; gap: 12px; margin-top: 16px; }
+.blk.def { cursor: default; }
+.blk.def > .row { border-radius: 20px var(--rb) 0 0; padding-top: 8px; }
+.def-del {
+  margin-left: auto; width: 26px; height: 26px; padding: 0; flex: none;
+  border: 0; border-radius: 50%; background: rgba(255, 255, 255, .2); color: #fff;
+  font: 600 16px/1 var(--ui); cursor: pointer;
+}
+.def-del:hover { background: rgba(255, 255, 255, .34); }
+.def-del:disabled { opacity: .45; cursor: not-allowed; }
 
 /* C-shaped blocks: head, belly, foot */
 .blk.has-body .row { border-radius: var(--rb) var(--rb) 0 0; }
@@ -300,6 +353,8 @@ button, input, select { font: inherit; color: inherit; }
 .foot { height: 16px; background: var(--c); border-radius: 0 0 var(--rb) var(--rb); }
 
 .blk.running > .row { box-shadow: 0 0 0 3px var(--pad); }
+/* the own blocks the running block sits in */
+.blk.calling > .row { box-shadow: 0 0 0 3px rgba(227, 162, 51, .5); }
 .blk.dim { opacity: .45; }
 
 /* number stepper and condition picker inside a block */
@@ -332,9 +387,23 @@ button, input, select { font: inherit; color: inherit; }
   min-width: 24px; padding: 1px 7px; border-radius: 7px;
   background: rgba(255, 255, 255, .22);
 }
+/* the little picker after a number: a variable or a value instead */
+.op-src {
+  appearance: none; -webkit-appearance: none;
+  width: 22px; height: 24px; padding: 0; margin-left: 1px;
+  border: 0; border-radius: 7px; cursor: pointer;
+  color: transparent; font-size: 13px;
+  background: rgba(255, 255, 255, .22) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='white' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 10px 6px no-repeat;
+}
+.op-src:hover { background-color: rgba(255, 255, 255, .34); }
+.op-src option, .op-src optgroup { color: var(--ink); }
+/* a field that holds a value: the value's name in a white-edged pill */
+.op-val, .op-pill { box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, .55); }
 
 /* ---------------- program list ---------------- */
-.prog-scroll { max-height: min(62vh, 560px); overflow: auto; padding-right: 2px; }
+/* tall enough for a long program (a flood fill and its own blocks), and
+   still beside the maze while it runs */
+.prog-scroll { max-height: max(min(62vh, 560px), calc(100vh - 190px)); overflow: auto; padding-right: 2px; }
 .prog-list { display: flex; flex-direction: column; gap: 7px; min-height: 68px; padding: 7px 0; }
 
 .cap {
@@ -419,6 +488,23 @@ button, input, select { font: inherit; color: inherit; }
   0%   { background: #ffd879; transform: scale(1.18); }
   100% { background: var(--panel); transform: scale(1); }
 }
+/* lists: one row each, item boxes with their number */
+.watch-lists { display: flex; flex-direction: column; gap: 5px; }
+.wl-row { display: flex; align-items: flex-start; gap: 6px 8px; }
+.wl-name {
+  flex: none; padding: 3px 9px; border-radius: 9px;
+  background: var(--c-list); color: #fff; font: 500 14px var(--display);
+}
+.wl-items { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
+.wli {
+  display: inline-flex; align-items: baseline; gap: 3px;
+  padding: 2px 7px 2px 5px; border: 2px solid var(--line); border-radius: 7px;
+  background: var(--panel); font: 600 13.5px var(--display); font-variant-numeric: tabular-nums;
+}
+.wli i { font: 500 9.5px var(--ui); font-style: normal; color: var(--ink-2); }
+.wli.is-new { border-color: var(--pad); box-shadow: 0 0 0 2px rgba(227, 162, 51, .35); }
+.wl-empty, .wl-more { font: 500 12.5px var(--ui); color: var(--ink-2); padding: 4px 2px; }
+
 .watch-log {
   display: flex; flex-wrap: wrap; align-items: center; gap: 5px;
   font: 500 12.5px var(--ui); color: var(--ink-2);
@@ -497,6 +583,21 @@ button, input, select { font: inherit; color: inherit; }
 .pad-dot   { fill: var(--pad); opacity: .55; }
 .star      { fill: var(--pad); }
 .trail     { stroke: #e3a233; stroke-width: 3; fill: none; opacity: .5; stroke-linecap: round; stroke-linejoin: round; }
+
+/* the robot's map: the numbers the program wrote, faint in their cells
+   (the newest in gold), and the walls it remembers as a gold line */
+.map-num {
+  fill: #dfe7f2; fill-opacity: .42; pointer-events: none;
+  /* a dark halo, so the trail never runs through a number */
+  stroke: #1b2330; stroke-width: 4px; stroke-linejoin: round; paint-order: stroke;
+  font-family: var(--display); font-weight: 600;
+  text-anchor: middle; dominant-baseline: central;
+}
+.map-num.is-new { fill: var(--pad); fill-opacity: .95; }
+.map-wall {
+  fill: none; stroke: #ffd879; stroke-opacity: .9; pointer-events: none;
+  stroke-width: calc(var(--wall-w, 9) * .3); stroke-linecap: round;
+}
 
 /* the robot (a top-view render, see code.html) glides from cell to cell */
 #botGroup { transition: transform var(--step, 420ms) cubic-bezier(.4, 0, .25, 1); }

@@ -35,7 +35,19 @@
     <span class="link-state" id="linkState"><i class="dot"></i><span id="linkText">Nicht verbunden</span></span>
     <button class="btn btn-primary" id="connectBtn">Roboter verbinden</button>
     <button class="info" id="i-connect" data-tip-key="i_connect" aria-label="Info">i</button>
-    <a class="btn btn-ghost btn-sm rail-link" id="driveLink" href="drive.html">Fernsteuerung</a>
+    <!-- the sister pages: remote control, explainers, workshop -->
+    <nav class="rail-links" aria-label="Seiten">
+      <a class="btn btn-ghost btn-sm rail-link" id="driveLink" href="drive.html">Fernsteuerung</a>
+      <a class="btn btn-ghost btn-sm rail-link" id="learnLink" href="learn.html">Lernen</a>
+      <a class="btn btn-ghost btn-sm rail-link" id="shopLink" href="werkstatt.html">Werkstatt</a>
+    </nav>
+    <!-- Profi-Woerter: real keywords on the blocks (if, else, repeat, set ...) -->
+    <span class="rail-pair">
+      <button class="btn btn-ghost btn-sm profi-btn" id="profiBtn" type="button" aria-pressed="false">
+        <span class="profi-ico" aria-hidden="true">{ }</span><span id="t-profi">Profi-W&ouml;rter</span>
+      </button>
+      <button class="info" data-tip-key="i_profi" aria-label="Info">i</button>
+    </span>
     <button class="btn btn-ghost" id="langBtn">English</button>
   </div>
 </header>
@@ -70,6 +82,8 @@
       <div class="cap cap-start" id="t-start">Start</div>
       <div class="prog-list" id="progList"></div>
       <div class="cap cap-end" id="t-end">Ende</div>
+      <!-- the program's own blocks ("Meine Bausteine"): definiere Name { ... } -->
+      <div class="defs" id="defList" hidden></div>
     </div>
   </section>
 
@@ -112,13 +126,14 @@
       <div class="verdict" id="verdict" hidden></div>
     </div>
 
-    <!-- the program's variables and their values, live (filled in by code.js) -->
+    <!-- the program's variables and lists and their values, live (filled in by code.js) -->
     <div class="watch" id="watch" hidden>
-      <div class="watch-row">
+      <div class="watch-row" id="watchVars">
         <span class="watch-title"><span id="t-watch">Variablen</span>
           <button class="info" data-tip-key="i_watch" aria-label="Info">i</button></span>
         <div class="watch-list" id="watchList"></div>
       </div>
+      <div class="watch-lists" id="watchLists" hidden></div>
       <div class="watch-log" id="watchLog" hidden></div>
     </div>
 

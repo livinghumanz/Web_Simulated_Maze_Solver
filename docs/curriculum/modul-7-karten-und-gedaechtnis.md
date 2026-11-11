@@ -4,8 +4,9 @@
 **Software:** Unplugged-Teile, die Karte des Roboters (`GO`, Kartenausdruck) und **Variablen**
 in RatRocket Code (Aufgabe 8 „Zähl mit!", Aufgabe 9 „Genau 5") **verfügbar** – die `GO`-Demo
 läuft heute über das Befehlsfeld der englischen Testseite `web/maze_event.html`.
-**Geplant – Stand November 2026:** Listen und eigene Funktionen in RatRocket Code; eine
-deutsche Kartenansicht im Editor.
+**Verfügbar** in Aufgabe 7: **Listen**, **eigene Bausteine** („Meine Bausteine") und die
+**Karten-Bausteine** (`merke Wände hier`, Zahl von Feld, `offen laut Karte`).
+**Geplant – Stand November 2026:** eine deutsche Ansicht der Roboter-Karte (`GO`) im Editor.
 
 In Woche 4 ist die rechte Hand an einem Stern auf der Insel gescheitert. Was fehlt ihr? Ein
 **Gedächtnis**. Die Kinder werden selbst zu Kartografen, sehen, wie der echte Roboter seine
@@ -24,7 +25,7 @@ Die SuS können …
    vergleichen,
 4. ein Verfahren mit Markierungen und Stapel (Tiefensuche) ausführen und beschreiben,
 5. eine Variable in einem Programm einsetzen, um etwas zu zählen und eine Schleife zu steuern
-   (verfügbar); (geplant) Listen, um sich einen Weg zu merken.
+   (verfügbar); Listen, um sich einen Weg zu merken (verfügbar, Aufgabe 7).
 
 ## Stunde 13 – Der Roboter als Kartograf
 
@@ -131,24 +132,27 @@ gewinnt. Zählt der Roboter oder Mia? Warum klappt der Trick in Aufgabe 9 nicht?
 7 mal?* `wiederhole 7 mal` mit dem `wenn` darin schafft das erste Labyrinth von Aufgabe 9.
 Warum nicht das zweite?
 
-**Geplant – Stand November 2026: Listen.** Ein Entwurf, wie die Brotkrumen-Stunde mit
-Bausteinen aussehen könnte (die Listen-Bausteine sind Arbeitstitel, angelehnt an Scratch – sie
-gibt es noch nicht; `setze`, `ändere` und `zeige` gibt es schon):
+**Verfügbar: Listen** (Aufgabe 7, Gruppe **Listen**, Scratch-Wörter): `füge … zu … hinzu`,
+`ersetze Element … von … durch …`, `setze … auf Element … von …`, `lösche alles aus …` und der
+Wert **Länge von …**. Element 1 ist das erste; bei jedem Lauf ist die Liste leer; das Feld
+**Listen** unter dem Labyrinth zeigt sie. Die Brotkrumen-Stunde mit Bausteinen – in einem
+eigenen Labyrinth mit Ausgang, ohne Stern; `meine Richtung` (Gruppe **Karte**) ist 1 Norden,
+2 Osten, 3 Süden, 4 Westen:
 
 ```
-[Entwurf – die Listen-Bausteine und „am Stern" gibt es noch nicht]
 setze Felder auf 0
-wiederhole, bis du am Stern bist
+wiederhole, bis du draußen bist
     … Rechte-Hand-Regel wie in Aufgabe 5 …
     nach jedem fahre 1 Feld: ändere Felder um 1
-        und füge die Richtung zur Liste Weg hinzu
-zeige Felder
-fahre die Liste Weg rückwärts ab        ← der Heimweg ohne Umwege in Sackgassen?
+        und füge meine Richtung zu Weg hinzu
 ```
 
-Knobel dazu (sobald Listen verfügbar sind): Der Roboter soll nach dem Stern auf dem **kürzesten
-bekannten** Weg heimfahren. Warum reicht es nicht, die Liste einfach rückwärts abzufahren?
-(Sackgassen-Umwege sind mit drin – man muss sie herausstreichen.)
+Draußen ist der Lauf sofort gewonnen und zu Ende – `Felder` und der ganze Weg stehen dann in den
+Feldern **Variablen** und **Listen** unter dem Labyrinth.
+
+Knobel dazu: Streicht jedes Paar „hin und
+sofort zurück" (1 dann 3, 2 dann 4 …) – was übrig bleibt, ist der Weg **ohne Sackgassen**. Wie
+viele Felder spart er? Warum darf man nach dem Streichen noch einmal suchen?
 
 ## Differenzierung
 
@@ -187,6 +191,7 @@ jedem Feld trägt er ein, was seine drei Sensoren melden, und rechnet neu. Das B
 ist die **Tiefensuche**: Markierungen (wo war ich?) und ein **Stapel** (wie komme ich zurück?).
 Beides sind Datenstrukturen – in Programmiersprachen heißen sie **Variable** und **Liste**.
 Variablen hat RatRocket Code (Aufgabe 8 und 9; eine Variable gehört zum Programm ihrer
-Aufgabe, wird mit ihm gespeichert und beginnt bei jedem Lauf mit 0). Listen noch nicht – der
-Bau der Tiefensuche mit Bausteinen bleibt deshalb geplant; das Denken dahinter ist heute
-vollständig unplugged lernbar.
+Aufgabe, wird mit ihm gespeichert und beginnt bei jedem Lauf mit 0). Seit November 2026 auch
+Listen, eigene Bausteine und die Karte des Roboters als Bausteine (Aufgabe 7): Ein Stapel ist
+dort eine Liste und eine Variable, die auf das oberste Element zeigt; die Zahlenflut (Modul 8)
+ist aus diesen Bausteinen gebaut und erprobt. Das Denken dahinter bleibt zuerst unplugged.

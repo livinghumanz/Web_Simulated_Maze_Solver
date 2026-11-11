@@ -24,7 +24,13 @@
  * "zeige" bubble; "Neue Variable" through the page; wrong programs must not
  * win tasks 8 and 9; with a stand-in robot no variable ever reaches it;
  * version-2 files and localStorage keep the variables, version-1 files still
- * open. Last, the font must come from web/fonts.
+ * open. Then the font must come from web/fonts.
+ *
+ * Then Profi-Woerter (labels only), own blocks (counting, no recursion),
+ * lists (from 1, errors as messages, the watch panel), values in number
+ * fields, the robot's map - and a flood fill built from these blocks only,
+ * which must solve random 5x5 mazes in the simulation and with a stand-in
+ * robot that answers WALLS. Last, the rail links.
  *
  * code.html?selftest=hook only sets up window.RRApp (for screenshots) and
  * runs nothing. The self-test never writes to localStorage.
@@ -841,6 +847,895 @@
     return out;
   }
 
+  /* ---------------- own blocks ("Meine Bausteine") ---------------- */
+  const bar = () => document.getElementById('verdict');
+  const barText = () => (bar().hidden ? '' : bar().textContent);
+
+  /* "Neuer Baustein" through the page: the field with its suggestion, the
+     name rules, the block in the box and its definition under the program;
+     the box only on task 7. */
+  async function funcUiCheck(own) {
+    const bad = [];
+    const q = (s) => document.querySelector(s);
+    const P = A.funcNameProblem;
+    const good = ['Ecke', 'Mein Baustein', 'Flut 2', 'Zick zack', 'abcdefghijklmnop', '\u00dcber', 'constructor'];
+    const wrong = ['', ' Ecke', 'Ecke ', 'Zick  zack', '1x', 'abcdefghijklmnopq', '__proto__', 'Ecke-2', 'caf\u00e9', 7];
+    for (const n of good) if (P(n, [])) bad.push('refused "' + n + '"');
+    for (const n of wrong) if (!P(n, [])) bad.push('took "' + n + '"');
+    if (P('ecke', ['Ecke']) !== 'varTaken') bad.push('case-insensitive duplicate');
+    if (P('X', ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']) !== 'funcFull') bad.push('a ninth one');
+    A.goLevel(own);
+    A.setFuncs([]);
+    A.setVars([]);
+    A.setProg([]);
+    if (!q('#paletteList .cat-func')) bad.push('no Meine Bausteine box on task 7');
+    if (q('#paletteList .cat-func .blk')) bad.push('a block before any own block');
+    q('#newFuncBtn').click();
+    const inp = q('#funcNameIn');
+    if (!inp || inp.value !== 'Mein Baustein') bad.push('suggestion "' + (inp && inp.value) + '"');
+    inp.value = '9 Leben';
+    inp.dispatchEvent(new Event('input'));
+    if (!q('.cat-func .var-ok').disabled || !q('.cat-func .var-msg').textContent) bad.push('bad name not stopped');
+    inp.value = '  Treppe  ';
+    inp.dispatchEvent(new Event('input'));
+    q('.cat-func .var-new').requestSubmit();
+    if (A.funcs.map((f) => f.name).join() !== 'Treppe') bad.push('not created: ' + A.funcs.map((f) => f.name).join());
+    if (!q('#paletteList .cat-func .blk[data-type="call"][data-f="Treppe"]')) bad.push('no Treppe block in the box');
+    if (q('#defList').hidden || !q('#defList .blk.def[data-def="Treppe"] .belly[data-cpath="[-1,\\"body\\"]"]')) bad.push('no definition with a belly under the program');
+    q('#newFuncBtn').click();
+    q('#funcNameIn').value = 'TREPPE';
+    q('#funcNameIn').dispatchEvent(new Event('input'));
+    if (!q('.cat-func .var-ok').disabled) bad.push('duplicate allowed');
+    q('.cat-func .var-x').click();
+    const withFuncs = [];
+    for (let i = 0; i < A.LEVELS.length; i++) {
+      A.goLevel(i);
+      if (q('#paletteList .cat-func')) withFuncs.push(A.LEVELS[i].id);
+    }
+    if (withFuncs.join() !== '7') bad.push('Meine Bausteine box on tasks ' + withFuncs.join());
+    A.goLevel(own);
+    A.setFuncs([]);
+    return { id: 'funcUi', ok: !bad.length, detail: 'Neuer Baustein: field with suggestion, name rules (spaces inside, 16, case-insensitive, at most 8), block in the box, definition under the program; box on task 7 only: ' +
+             (bad.length ? 'BAD ' + bad.join('; ') : 'all right') };
+  }
+
+  /* An own block runs like its blocks written out, step by step with the
+     running block and the "calling" one marked, and counts once. */
+  async function funcRunCheck(own) {
+    const bad = [];
+    const q = (s) => document.querySelector(s);
+    A.goLevel(own);
+    A.setSandbox(OWN[0].maze);                 /* 3x3 stairs: right, move, left, move - twice */
+    A.setVars([]);
+    A.setFuncs([{ name: 'Treppe', body: [B('right'), B('move'), B('left'), B('move')] }]);
+    A.setProg([]);
+    if (!A.dropBlock(B('call', { f: 'Treppe' }), null, [], 0) || !A.dropBlock(B('call', { f: 'Treppe' }), null, [], 1)) bad.push('drop into the program refused');
+    const count = A.countAll();
+    if (count !== 7) bad.push('count ' + count + ' (want 2 uses + 1 head + 4 inside = 7)');
+    A.clearResult();
+    A.resetRun();
+    await A.stepOnce();
+    if (!q('#progList .blk.running[data-type="call"]')) bad.push('step 1: the use is not marked');
+    await A.stepOnce();
+    if (!q('#defList .blk.running[data-type="right"]') || !q('#progList .blk.calling[data-type="call"]')) bad.push('step 2: inside not marked');
+    A.resetRun();
+    A.clearResult();
+    await A.runAll();
+    const r = await verdict();
+    const s = A.stats;
+    if (!r.win || !s || s.blocks !== 7 || s.moves !== 4 || s.turns !== 4) bad.push('run: ' + r.reason + ' ' + JSON.stringify(s));
+    A.setFuncs([]);
+    return { id: 'funcRun', ok: !bad.length, detail: 'own block "Treppe" used twice solves the stairs maze; counts 1 head + 4 inside + 2 uses = 7 (written out: 8); stepping marks the block inside and the use: ' +
+             (bad.length ? 'BAD ' + bad.join('; ') : 'all right') };
+  }
+
+  /* No own block may use itself: refused on the drop (directly, through
+     another block, hidden in a loop) with a message, refused in files, and
+     a hand-made loop still ends with that message instead of hanging.
+     A used block cannot be deleted. */
+  async function funcRecCheck(own) {
+    const bad = [];
+    A.goLevel(own);
+    A.setSandbox(EMPTY3);
+    A.setVars([]);
+    A.setFuncs([{ name: 'A', body: [] }, { name: 'Bb', body: [B('call', { f: 'A' })] }]);
+    A.setProg([]);
+    A.clearResult();
+    A.resetRun();
+    const self = A.dropBlock(B('call', { f: 'A' }), null, [-1, 'body'], 0);
+    const msg = barText();
+    const loop = A.dropBlock(B('call', { f: 'Bb' }), null, [-1, 'body'], 0);
+    const hidden = A.dropBlock(B('repeat', { n: 2, body: [B('call', { f: 'Bb' })] }), null, [-1, 'body'], 0);
+    const selfB = A.dropBlock(B('call', { f: 'Bb' }), null, [-2, 'body'], 0);
+    if (self || loop || hidden || selfB) bad.push('let through: ' + [self, loop, hidden, selfB].join());
+    if (!/nicht selbst/.test(msg)) bad.push('message "' + msg + '"');
+    if (A.funcs[0].body.length || A.funcs[1].body.length !== 1) bad.push('bodies changed');
+    const fine1 = A.dropBlock(B('call', { f: 'A' }), null, [], 0);
+    const fine2 = A.dropBlock(B('move'), null, [-1, 'body'], 0);
+    const fine3 = A.dropBlock(A.prog[0], [0], [-2, 'body'], 1);        /* moved from the program into Bb */
+    if (!fine1 || !fine2 || !fine3 || A.prog.length || A.funcs[1].body.length !== 2) bad.push('allowed drops: ' + [fine1, fine2, fine3].join() + ' ' + JSON.stringify(A.funcs));
+    if (A.deleteFunc('A') || !/benutzt/.test(barText())) bad.push('deleted A while Bb uses it');
+    if (!A.deleteFunc('Bb') || !A.deleteFunc('A') || A.funcs.length) bad.push('could not delete unused ones');
+    /* a loop made by hand, past every check: the run ends with the message */
+    A.setFuncs([{ name: 'A', body: [B('call', { f: 'Bb' })] }, { name: 'Bb', body: [B('call', { f: 'A' })] }]);
+    A.setProg([B('call', { f: 'A' })]);
+    A.clearResult();
+    A.resetRun();
+    await A.runAll();
+    const r = await verdict();
+    if (r.reason !== 'funcSelf') bad.push('hand-made loop: ' + r.reason);
+    A.setFuncs([]);
+    A.setProg([]);
+    return { id: 'funcRec', ok: !bad.length, detail: 'own block using itself refused on the drop (direct, through another, inside a loop) with "' + msg + '"; allowed drops work; used block not deletable; a hand-made loop ends with the message: ' +
+             (bad.length ? 'BAD ' + bad.join('; ') : 'all right') };
+  }
+
+  /* Files: own blocks make it version 3 and open again unchanged; a
+     version-2 file cannot hold them; recursion and bad names are refused.
+     localStorage keeps them per task. */
+  function funcFileChecks(own) {
+    const out = [];
+    const add = (id, ok, detail) => out.push({ id, ok: !!ok, detail });
+    const F = (funcs, prog, extra) => JSON.stringify(Object.assign({ version: 3, level: 7, lang: 'de', vars: ['a'], funcs, prog: prog || [] }, extra));
+    A.goLevel(own);
+    A.setVars(['a']);
+    A.setFuncs([{ name: 'Zick zack', body: [B('right'), B('move'), B('changeVar', { v: 'a', n: 1 })] },
+                { name: 'Zwei', body: [B('call', { f: 'Zick zack' }), B('call', { f: 'Zick zack' })] }]);
+    A.setProg([B('call', { f: 'Zwei' }), B('showVar', { v: 'a' })]);
+    const d = A.exportData();
+    const b = A.parseFile(JSON.stringify(d, null, 2));
+    add('funcFile1', d.version === 3 && d.funcs.length === 2 && b && JSON.stringify(b.funcs) === JSON.stringify(d.funcs) &&
+        JSON.stringify(b.prog) === JSON.stringify(d.prog) && b.funcs[1].body[0].f === 'Zick zack',
+        'version 3: own blocks (one using another) save and open again unchanged');
+    const s = A.storeData();
+    const r = A.restoreFuncs({ 7: [{ name: 'Gut', body: [] }, { name: '1 schlecht', body: [] }, { name: 'gut', body: [] }, { name: 'Ohne' }], 99: [{ name: 'X', body: [] }], 3: 'nein' });
+    const rv = A.restoreVars({}, { 7: [] }, { 7: [{ name: 'F', body: [B('setVar', { v: 'Innen', n: 1 })] }] });
+    add('funcStore', s.funcs && s.funcs[7] && s.funcs[7].length === 2 && JSON.stringify(r) === '{"7":[{"name":"Gut","body":[]}]}' &&
+        JSON.stringify(rv) === '{"7":["Innen"]}',
+        'localStorage: own blocks kept per task; on loading bad names, duplicates and bodies are dropped, variables used inside come back: ' + JSON.stringify(r));
+    const deep = (n) => { let x = [B('move')]; for (let i = 0; i < n; i++) x = [B('repeat', { n: 2, body: x })]; return x; };
+    const bad = [
+      F([{ name: 'A', body: [B('call', { f: 'A' })] }]),
+      F([{ name: 'A', body: [B('call', { f: 'B' })] }, { name: 'B', body: [B('call', { f: 'A' })] }]),
+      F([{ name: 'A', body: [B('call', { f: 'B' })] }, { name: 'B', body: [B('call', { f: 'C' })] }, { name: 'C', body: [B('repeat', { n: 2, body: [B('call', { f: 'A' })] })] }]),
+      F([{ name: 'A', body: [] }], [B('call', { f: 'Nix' })]),
+      F([{ name: 'A', body: [B('call', { f: 'Nix' })] }]),
+      F([{ name: 'A', body: [] }, { name: 'a', body: [] }]),
+      F([{ name: '1A', body: [] }]),
+      F([{ name: 'A ', body: [] }]),
+      F([{ name: '__proto__', body: [] }]),
+      F([{ name: 'A' }]),
+      F([{ name: 'A', body: {} }]),
+      F([{ name: 'A', body: [B('jump')] }]),
+      F([{ name: 'A', body: [B('setVar', { v: 'b', n: 1 })] }]),
+      F({ A: [] }),
+      F('A'.repeat(3).split('').map((x, i) => ({ name: 'F' + i, body: [] })).concat('abcdef'.split('').map((x) => ({ name: x, body: [] })))),
+      F([{ name: 'A', body: deep(12) }]),
+      F([{ name: 'A', body: [] }], [B('call', {})]),
+      F([{ name: 'A', body: [] }], [B('call', { f: 7 })]),
+      JSON.stringify({ version: 2, level: 7, lang: 'de', vars: [], funcs: [{ name: 'A', body: [] }], prog: [B('call', { f: 'A' })] }),
+      JSON.stringify({ version: 4, level: 7, lang: 'de', vars: [], prog: [] }),
+    ];
+    const through = bad.filter((txt) => A.parseFile(txt) !== null);
+    add('funcFile2', !through.length, bad.length + ' broken files with own blocks refused (using itself directly / through others / in a loop, unknown, duplicate or bad names, more than 8, too deep, version 2 with own blocks)' +
+        (through.length ? ' - LET THROUGH: ' + through.join(' | ') : ''));
+    A.setFuncs([]);
+    A.setVars([]);
+    A.setProg([]);
+    return out;
+  }
+
+  /* ---------------- lists and values in number fields ---------------- */
+  /* a program on the empty 3x3 own maze with these variables and lists */
+  async function runWith(own, names, listNames, prog, maze) {
+    A.goLevel(own);
+    A.setSandbox(maze || EMPTY3);
+    A.setFuncs([]);
+    A.setVars(names);
+    A.setLists(listNames);
+    A.setProg(clone(prog));
+    A.clearResult();
+    A.resetRun();
+    await A.runAll();
+    const r = await verdict();
+    return { r, vals: A.varValues, lists: A.listValues };
+  }
+
+  /* "Neue Liste" through the page: suggestion, name rules shared with the
+     variables (one name space), the blocks and the "Laenge von" pill, chips
+     that delete only what is unused; the box only on task 7. */
+  async function listUiCheck(own) {
+    const bad = [];
+    const q = (s) => document.querySelector(s);
+    A.goLevel(own);
+    A.setFuncs([]);
+    A.setLists([]);
+    A.setVars(['Weg']);
+    A.setProg([]);
+    const P = A.listNameProblem;
+    if (P('Liste', []) || P('Z\u00e4hler2', []) || !P('1x', []) || !P('a b', []) || !P(5, [])) bad.push('name rules');
+    if (P('weg') !== 'varTaken' || A.varNameProblem('Neu') || P('L', ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']) !== 'listFull') bad.push('one name space with variables / at most 8');
+    if (!q('#paletteList .cat-list') || q('#paletteList .cat-list .blk')) bad.push('box missing or blocks before any list');
+    q('#newListBtn').click();
+    const inp = q('#listNameIn');
+    if (!inp || inp.value !== 'Liste') bad.push('suggestion "' + (inp && inp.value) + '" (Weg is a variable here)');
+    inp.value = 'WEG';
+    inp.dispatchEvent(new Event('input'));
+    if (!q('.cat-list .var-ok').disabled) bad.push('a list named like a variable allowed');
+    inp.value = 'Felder';
+    inp.dispatchEvent(new Event('input'));
+    q('.cat-list .var-new').requestSubmit();
+    if (A.lists.join() !== 'Felder') bad.push('not created: ' + A.lists.join());
+    for (const ty of ['listAdd', 'listSet', 'listGet', 'listClear']) if (!q('#paletteList .cat-list [data-type="' + ty + '"]')) bad.push('no ' + ty);
+    const pill = q('#paletteList .cat-list .val-pill');
+    if (!pill || pill.textContent !== 'L\u00e4nge von Felder' || pill.dataset.op !== '{"len":"Felder"}') bad.push('pill ' + (pill && pill.textContent));
+    if (A.varNameProblem('felder') !== 'varTaken') bad.push('a variable named like a list allowed');
+    A.setProg([B('listAdd', { l: 'Felder', n: 1 })]);
+    if (A.deleteList('Felder') || !/Felder/.test(q('#paletteList .cat-list .var-msg').textContent)) bad.push('deleted a used list');
+    A.setProg([B('setVar', { v: 'Weg', n: { len: 'Felder' } })]);
+    if (A.deleteList('Felder')) bad.push('deleted a list used as a length');
+    A.setProg([]);
+    if (!A.deleteList('Felder') || A.lists.length) bad.push('could not delete an unused list');
+    const withLists = [];
+    for (let i = 0; i < A.LEVELS.length; i++) {
+      A.goLevel(i);
+      if (q('#paletteList .cat-list')) withLists.push(A.LEVELS[i].id);
+    }
+    if (withLists.join() !== '7') bad.push('Listen box on tasks ' + withLists.join());
+    A.goLevel(own);
+    A.setVars([]);
+    return { id: 'listUi', ok: !bad.length, detail: 'Neue Liste: suggestion, names shared with the variables, blocks and "L\u00e4nge von" pill appear, delete only unused; box on task 7 only: ' +
+             (bad.length ? 'BAD ' + bad.join('; ') : 'all right') };
+  }
+
+  /* add / item / replace / length / delete all, counting from 1, values
+     in number fields, and a fresh empty list on every run */
+  async function listRunCheck(own) {
+    const prog = [
+      B('listAdd', { l: 'Z', n: 3 }), B('listAdd', { l: 'Z', n: 5 }), B('listAdd', { l: 'Z', n: -7 }),
+      B('listGet', { v: 'a', i: 2, l: 'Z' }),                          /* a = 5 */
+      B('setVar', { v: 'n', n: { len: 'Z' } }),                         /* n = 3 */
+      B('listGet', { v: 'c', i: { v: 'n' }, l: 'Z' }),                  /* c = -7: item n */
+      B('listSet', { l: 'Z', i: 1, n: { v: 'a' } }),                    /* Z = 5, 5, -7 */
+      B('changeVar', { v: 'a', n: { v: 'c' } }),                        /* a = -2 */
+      B('listAdd', { l: 'K', n: { len: 'Z' } }),                        /* K = 3 */
+      B('listClear', { l: 'Z' }), B('listAdd', { l: 'Z', n: 1 }),
+      B('ifElse', { cond: V('n', '=', { len: 'K' }), body: [B('changeVar', { v: 'b', n: 10 })], alt: [] }),   /* 3 = 1? no */
+      B('ifElse', { cond: V('n', '>', { len: 'Z' }), body: [B('changeVar', { v: 'b', n: 1 })], alt: [] }),    /* 3 > 1: b = 1 */
+      B('ifElse', { cond: V('c', '<', { v: 'a' }), body: [B('changeVar', { v: 'b', n: 100 })], alt: [] }),  /* -7 < -2: b = 101 */
+    ];
+    A.goLevel(own);
+    A.setSandbox(EMPTY3);
+    A.setFuncs([]);
+    A.setVars(['a', 'b', 'c', 'n']);
+    A.setLists(['Z', 'K']);
+    const runs = [];
+    for (let k = 0; k < 2; k++) {
+      A.setProg(clone(prog));
+      A.clearResult();
+      A.resetRun();
+      await A.runAll();
+      const r = await verdict();
+      runs.push(JSON.stringify({ r: r.reason, v: A.varValues, l: A.listValues }));
+    }
+    const want = JSON.stringify({ r: 'failedEnd', v: { a: -2, b: 101, c: -7, n: 3 }, l: { Z: [1], K: [3] } });
+    return { id: 'listRun', ok: runs[0] === want && runs[1] === want,
+             detail: 'add, item (1 = first, also item n), replace, length, delete all, values in number fields and comparisons: ' + runs[0] +
+                     (runs[1] === runs[0] ? '; the same on the next run (lists start empty)' : '; SECOND RUN ' + runs[1]) };
+  }
+
+  /* An item that is not there ends the run with a friendly message that
+     names the list and says how many items it has. */
+  async function listErrCheck(own) {
+    const out = [];
+    const cases = [
+      ['item 0', [B('listAdd', { l: 'Z', n: 4 }), B('listGet', { v: 'a', i: 0, l: 'Z' })], 'errIndexOne', /Element 0 .*nur 1 Element./],
+      ['item 3 of 2', [B('listAdd', { l: 'Z', n: 4 }), B('listAdd', { l: 'Z', n: 4 }), B('listGet', { v: 'a', i: 3, l: 'Z' })], 'errIndex', /kein Element 3 .*2 Elemente/],
+      ['item 1 of an empty list', [B('listGet', { v: 'a', i: 1, l: 'Z' })], 'errEmpty', /Z ist leer/],
+      ['replace item -1', [B('listAdd', { l: 'Z', n: 4 }), B('listSet', { l: 'Z', i: -1, n: 2 })], 'errIndexOne', /Element \u22121/],
+      ['item a = 2 (a variable)', [B('setVar', { v: 'a', n: 2 }), B('listAdd', { l: 'Z', n: 4 }), B('listGet', { v: 'a', i: { v: 'a' }, l: 'Z' })], 'errIndexOne', /Element 2/],
+      ['the 1001st item', [B('repeatUntil', { cond: V('a', '>', 1000), body: [B('listAdd', { l: 'Z', n: 1 }), B('changeVar', { v: 'a', n: 1 })] })], 'errFull', /voll/],
+    ];
+    const bad = [];
+    for (const [name, prog, reason, msg] of cases) {
+      const p = await runWith(own, ['a'], ['Z'], prog);
+      const text = barText();
+      if (p.r.reason !== reason || !msg.test(text) || !/lose/.test(bar().className)) bad.push(name + ': ' + p.r.reason + ' "' + text + '"');
+    }
+    out.push({ id: 'listErr', ok: !bad.length, detail: 'items that are not there (0, past the end, empty list, -1, by a variable) and the 1001st item end the run with a message: ' +
+               (bad.length ? 'BAD ' + bad.join('; ') : 'all right') });
+    return out;
+  }
+
+  /* The watch panel shows each list: numbered items, gold on the last
+     change, "leer" when empty; also without any variable; Zurueck empties. */
+  async function listWatchCheck(own) {
+    const bad = [];
+    const q = (s) => document.querySelector(s);
+    const items = (l) => Array.from(document.querySelectorAll('#watchLists .wl-row[data-list="' + l + '"] .wli')).map((n) => n.textContent);
+    const gold = () => Array.from(document.querySelectorAll('#watchLists .wli.is-new')).map((n) => n.closest('.wl-row').dataset.list + ':' + n.textContent);
+    A.goLevel(own);
+    A.setSandbox(EMPTY3);
+    A.setFuncs([]);
+    A.setVars([]);
+    A.setLists(['Weg', 'Leer']);
+    A.setProg([B('listAdd', { l: 'Weg', n: 4 }), B('listAdd', { l: 'Weg', n: -2 }), B('listSet', { l: 'Weg', i: 1, n: 9 }), B('move')]);
+    A.clearResult();
+    A.resetRun();
+    if (q('#watch').hidden || !q('#watchVars').hidden || q('#watchLists').hidden) bad.push('panel not shown for lists alone');
+    if (!/leer/.test(q('#watchLists .wl-row[data-list="Leer"]').textContent)) bad.push('empty list not "leer"');
+    await A.stepOnce();
+    await A.stepOnce();
+    if (items('Weg').join() !== '14,2\u22122' || gold().join() !== 'Weg:2\u22122') bad.push('after two adds: ' + items('Weg').join() + ' gold ' + gold().join());
+    await A.stepOnce();
+    if (items('Weg').join() !== '19,2\u22122' || gold().join() !== 'Weg:19') bad.push('after replace: ' + items('Weg').join() + ' gold ' + gold().join());
+    A.resetRun();
+    if (items('Weg').length || !/leer/.test(q('#watchLists .wl-row[data-list="Weg"]').textContent)) bad.push('not empty after Zur\u00fcck');
+    A.setLists([]);
+    if (!q('#watch').hidden) bad.push('panel shown with no list and no variable');
+    return { id: 'listWatch', ok: !bad.length, detail: 'watch panel: each list with numbered items, gold on the last change, "leer", shown without variables, Zur\u00fcck empties: ' +
+             (bad.length ? 'BAD ' + bad.join('; ') : 'all right') };
+  }
+
+  /* Values in number fields through the page: the picker next to a number
+     chooses a variable, a pill dropped on a field sets "Laenge von"; and
+     back to a number. */
+  async function opUiCheck(own) {
+    const bad = [];
+    const q = (s) => document.querySelector(s);
+    A.goLevel(own);
+    A.setFuncs([]);
+    A.setVars(['a', 'b']);
+    A.setLists(['Weg']);
+    A.setProg([B('setVar', { v: 'a', n: 4 }), B('repeatUntil', { cond: V('a', '>', 2), body: [] })]);
+    const pick = q('#progList .blk[data-path="[0]"] .op-src');
+    if (!pick) bad.push('no picker next to the number');
+    else {
+      pick.value = 'v:b';
+      pick.dispatchEvent(new Event('change'));
+      if (JSON.stringify(A.prog[0].n) !== '{"v":"b"}') bad.push('picker: ' + JSON.stringify(A.prog[0].n));
+    }
+    const slot = q('#progList .blk[data-path="[1]"] .row [data-slot]');
+    const spec = slot && JSON.parse(slot.dataset.slot);
+    if (!spec || !A.dropValue({ len: 'Weg' }, spec) || JSON.stringify(A.prog[1].cond.n) !== '{"len":"Weg"}') bad.push('pill on the comparison: ' + JSON.stringify(A.prog[1].cond));
+    if (A.dropValue({ len: 'Weg' }, { p: [0], k: 'v' }) || A.dropValue({ len: 'Weg' }, { p: [7], k: 'n' })) bad.push('pill took a wrong slot');
+    const back = q('#progList .blk[data-path="[0]"] .op-val');
+    if (!back || back.selectedOptions[0].textContent !== 'b') bad.push('value not shown as a picker');
+    else {
+      back.value = '#';
+      back.dispatchEvent(new Event('change'));
+      if (A.prog[0].n !== 0) bad.push('back to a number: ' + JSON.stringify(A.prog[0].n));
+    }
+    A.setVars([]);
+    A.setLists([]);
+    A.setProg([]);
+    return { id: 'opUi', ok: !bad.length, detail: 'number fields: the picker sets a variable, a "L\u00e4nge von" pill dropped on a comparison sets the length, wrong slots refused, back to a number: ' +
+             (bad.length ? 'BAD ' + bad.join('; ') : 'all right') };
+  }
+
+  /* Files with lists and values: version 3, opened again unchanged; older
+     versions cannot hold them; undeclared names and bad values refused;
+     localStorage keeps lists per task and brings back names in use. */
+  function listFileChecks(own) {
+    const out = [];
+    const add = (id, ok, detail) => out.push({ id, ok: !!ok, detail });
+    const F = (o) => JSON.stringify(Object.assign({ version: 3, level: 7, lang: 'de', vars: ['a'], lists: ['Z'], prog: [] }, o));
+    A.goLevel(own);
+    A.setFuncs([]);
+    A.setVars(['a']);
+    A.setLists(['Z', 'Weg']);
+    A.setProg([B('listAdd', { l: 'Z', n: { v: 'a' } }), B('listSet', { l: 'Weg', i: { len: 'Z' }, n: -999 }),
+               B('listGet', { v: 'a', i: 1, l: 'Z' }), B('listClear', { l: 'Weg' }),
+               B('repeatUntil', { cond: V('a', '>', { len: 'Weg' }), body: [B('changeVar', { v: 'a', n: { v: 'a' } })] })]);
+    const d = A.exportData();
+    const b = A.parseFile(JSON.stringify(d));
+    add('listFile1', d.version === 3 && JSON.stringify(d.lists) === '["Z","Weg"]' && b && JSON.stringify(b.lists) === JSON.stringify(d.lists) &&
+        JSON.stringify(b.prog) === JSON.stringify(d.prog) && JSON.stringify(b.prog[1]) === '{"t":"listSet","l":"Weg","i":{"len":"Z"},"n":-999}',
+        'version 3: lists and values in number fields save and open again unchanged');
+    const bad = [
+      F({ prog: [B('listAdd', { l: 'Y', n: 1 })] }),
+      F({ prog: [B('listAdd', { l: 'Z' })] }),
+      F({ prog: [B('listAdd', { n: 1 })] }),
+      F({ prog: [B('listGet', { v: 'a', l: 'Z' })] }),
+      F({ prog: [B('listGet', { v: 'b', i: 1, l: 'Z' })] }),
+      F({ prog: [B('listSet', { l: 'Z', i: '1', n: 1 })] }),
+      F({ prog: [B('setVar', { v: 'a', n: { v: 'b' } })] }),
+      F({ prog: [B('setVar', { v: 'a', n: { len: 'Y' } })] }),
+      F({ prog: [B('setVar', { v: 'a', n: { v: 'a', len: 'Z' } })] }),
+      F({ prog: [B('setVar', { v: 'a', n: {} })] }),
+      F({ prog: [B('setVar', { v: 'a', n: [1] })] }),
+      F({ prog: [B('setVar', { v: 'a', n: { q: 'a' } })] }),
+      F({ prog: [B('repeatUntil', { cond: V('a', '=', { len: 'nix' }), body: [] })] }),
+      F({ lists: ['a'] }),
+      F({ lists: ['Z', 'z'] }),
+      F({ lists: ['1Z'] }),
+      F({ lists: 'Z' }),
+      F({ lists: 'abcdefghi'.split('') }),
+      JSON.stringify({ version: 2, level: 7, lang: 'de', vars: ['a'], prog: [B('setVar', { v: 'a', n: { v: 'a' } })] }),
+      JSON.stringify({ version: 2, level: 7, lang: 'de', vars: ['a'], lists: ['Z'], prog: [B('listClear', { l: 'Z' })] }),
+    ];
+    const through = bad.filter((txt) => A.parseFile(txt) !== null);
+    add('listFile2', !through.length, bad.length + ' broken files with lists or values refused (unknown list or variable, missing fields, bad values, name clashes, more than 8, version 2 with v3 content)' +
+        (through.length ? ' - LET THROUGH: ' + through.join(' | ') : ''));
+    const s = A.storeData();
+    const r = A.restoreLists({ 7: ['Z', 'a b'], 8: ['Weg'], 99: ['X'] }, { 7: [B('listAdd', { l: 'Neu', n: 1 })], 8: [B('setVar', { v: 'x', n: { len: 'Q' } })] }, {});
+    const rv = A.restoreVars({ 8: ['Q'] }, {}, {}, r);
+    add('listStore', s.lists && JSON.stringify(s.lists[7]) === '["Z","Weg"]' && JSON.stringify(r) === '{"7":["Neu"],"8":["Weg","Q"]}' && JSON.stringify(rv) === '{}',
+        'localStorage: lists saved per task; bad lists dropped, names in use come back (also as a length), a variable never takes a list\'s name: ' + JSON.stringify(r));
+    A.setVars([]);
+    A.setLists([]);
+    A.setProg([]);
+    return out;
+  }
+
+  /* ---------------- the robot's map ("Karte") ---------------- */
+  /* 3x3, one wall east of the start cell, star top right */
+  const KMAZE = { n: 3, walls: ['0,0,E'], exits: [], goal: { x: 2, y: 2 } };
+  const P = (p) => ({ p });
+  const Vv = (v) => ({ v });
+
+  /* merke Waende hier, numbers, the map conditions, the position values,
+     and a fresh empty map on every run */
+  async function mapRunCheck(own) {
+    const bad = [];
+    const prog = [
+      B('mapWalls'),
+      B('ifElse', { cond: 'mapFront', body: [B('changeVar', { v: 'f', n: 1 })], alt: [] }),              /* open */
+      B('ifElse', { cond: 'mapRight', body: [B('changeVar', { v: 'f', n: 10 })], alt: [] }),             /* the wall */
+      B('ifElse', { cond: 'mapLeft', body: [B('changeVar', { v: 'f', n: 100 })], alt: [] }),             /* the border */
+      B('ifElse', { cond: { x: 1, y: 0, dir: 4 }, body: [B('changeVar', { v: 'f', n: 1000 })], alt: [] }),  /* same wall, other side */
+      B('ifElse', { cond: { x: 1, y: 1, dir: 1 }, body: [B('changeVar', { v: 'g', n: 1 })], alt: [] }),  /* unknown: open */
+      B('ifElse', { cond: { x: 2, y: 2, dir: 2 }, body: [B('changeVar', { v: 'g', n: 10 })], alt: [] }), /* border: closed */
+      B('mapSet', { x: 2, y: 1, n: 7 }),
+      B('mapGet', { v: 'a', x: 2, y: 1 }),
+      B('mapGet', { v: 'b', x: 0, y: 0 }),
+      B('right'),
+      B('setVar', { v: 'd', n: P('d') }),
+      B('setVar', { v: 'x', n: P('sx') }), B('changeVar', { v: 'x', n: P('sy') }), B('changeVar', { v: 'x', n: P('x') }),
+      B('mapSet', { x: P('x'), y: P('y'), n: Vv('a') }),
+      B('mapGet', { v: 'c', x: 0, y: 0 }),
+      B('mapClear'),
+      B('mapGet', { v: 'e', x: 2, y: 1 }),
+    ];
+    const names = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'x'];
+    let p = await runWith(own, names, [], prog, KMAZE);
+    const known = JSON.stringify(A.mapState.known);
+    const want = '{"a":7,"b":-1,"c":7,"d":2,"e":-1,"f":1,"g":1,"x":4}';
+    if (JSON.stringify(p.vals) !== want) bad.push('values ' + JSON.stringify(p.vals));
+    if (known !== '{"0,0,N":false,"0,1,S":false,"0,0,W":true,"0,0,E":true,"1,0,W":true}') bad.push('remembered ' + known);
+    /* the next run starts with an empty map: no number, no remembered wall
+       (so the wall to the right is unknown - and unknown counts as open) */
+    await runWith(own, names, [], [B('mapSet', { x: 1, y: 1, n: 5 }), B('mapWalls')], KMAZE);
+    p = await runWith(own, names, [], [B('mapGet', { v: 'a', x: 1, y: 1 }),
+      B('ifElse', { cond: 'mapRight', body: [B('setVar', { v: 'f', n: 1 })], alt: [] })], KMAZE);
+    if (p.vals.a !== -1 || p.vals.f !== 1) bad.push('next run: a=' + p.vals.a + ' f=' + p.vals.f);
+    return { id: 'mapRun', ok: !bad.length, detail: 'merke W\u00e4nde hier keeps front/left/right (both sides of a wall), offen laut Karte vorne/rechts/links and Feld x y nach r, unknown = open, border closed, numbers (-1 empty), mein x/meine Richtung/Stern x y, l\u00f6sche alle Zahlen, empty map on every run: ' +
+             (bad.length ? 'BAD ' + bad.join('; ') : 'all right') };
+  }
+
+  /* cells and directions that are not there end the run with a message */
+  async function mapErrCheck(own) {
+    const bad = [];
+    const cases = [
+      ['cell 3 0', [B('mapSet', { x: 3, y: 0, n: 1 })], 'errCell', /\(3, 0\) gibt es nicht .*0 bis 2/],
+      ['cell -1 0', [B('mapGet', { v: 'a', x: -1, y: 0 })], 'errCell', /\(\u22121, 0\)/],
+      ['cell 0 3 in a condition', [B('ifElse', { cond: { x: 0, y: 3, dir: 1 }, body: [], alt: [] })], 'errCell', /\(0, 3\)/],
+      ['direction 5', [B('ifElse', { cond: { x: 0, y: 0, dir: 5 }, body: [], alt: [] })], 'errDir', /Richtung 5 gibt es nicht .*1 ist Norden/],
+      ['direction 0', [B('repeatUntil', { cond: { x: 0, y: 0, dir: 0 }, body: [] })], 'errDir', /Richtung 0/],
+    ];
+    for (const [name, prog, reason, msg] of cases) {
+      const p = await runWith(own, ['a'], [], prog, KMAZE);
+      if (p.r.reason !== reason || !msg.test(barText())) bad.push(name + ': ' + p.r.reason + ' "' + barText() + '"');
+    }
+    return { id: 'mapErr', ok: !bad.length, detail: 'cells off the map and directions other than 1-4 end the run with a message: ' + (bad.length ? 'BAD ' + bad.join('; ') : 'all right') };
+  }
+
+  /* the numbers appear faintly in their cells (the newest in gold), the
+     remembered walls as a gold line; Zurueck clears them */
+  async function mapDrawCheck(own) {
+    const bad = [];
+    const q = (s) => document.querySelector(s);
+    await runWith(own, [], [], [B('mapSet', { x: 0, y: 2, n: 3 }), B('mapSet', { x: 1, y: 2, n: -4 }), B('mapWalls')], KMAZE);
+    const nums = Array.from(document.querySelectorAll('#mapNums text.map-num'));
+    const txt = nums.map((n) => n.textContent + (n.classList.contains('is-new') ? '*' : '')).join();
+    if (txt !== '3,\u22124*') bad.push('numbers "' + txt + '"');
+    const cell = q('#maze rect.cell');                       /* cell (0,2) is the first rect drawn at the top left */
+    if (nums[0] && cell) {
+      const cx = +cell.getAttribute('x') - 1 + (+cell.getAttribute('width') + 2) / 2;
+      if (Math.abs(+nums[0].getAttribute('x') - cx) > 1 || Math.abs(+nums[0].getAttribute('y') - cx) > 1) bad.push('3 not in cell (0,2)');
+    }
+    const op = nums[0] ? getComputedStyle(nums[0]).fillOpacity : '1';
+    if (!(+op < 0.6)) bad.push('not faint: ' + op);
+    if (!q('#mapKnown path.map-wall')) bad.push('no remembered wall drawn');
+    A.resetRun();
+    if (document.querySelector('#mapNums text') || q('#mapKnown path')) bad.push('still drawn after Zur\u00fcck');
+    return { id: 'mapDraw', ok: !bad.length, detail: 'map numbers drawn faintly in their cells (newest gold), remembered walls drawn, cleared by Zur\u00fcck: ' + (bad.length ? 'BAD ' + bad.join('; ') : 'all right') };
+  }
+
+  /* The Karte box (task 7 only) with its value pills; the condition picker
+     offers the map conditions there; a "mein x" pill lands on a field. */
+  async function mapUiCheck(own) {
+    const bad = [];
+    const q = (s) => document.querySelector(s);
+    A.goLevel(own);
+    A.setFuncs([]);
+    A.setLists([]);
+    A.setVars(['a']);
+    A.setProg([B('mapSet', { x: 0, y: 0, n: 0 }), B('ifElse', { cond: 'frontFree', body: [], alt: [] })]);
+    for (const ty of ['mapWalls', 'mapClear', 'mapSet', 'mapGet']) if (!q('#paletteList .cat-map [data-type="' + ty + '"]')) bad.push('no ' + ty);
+    const pills = Array.from(document.querySelectorAll('#paletteList .cat-map .val-pill')).map((n) => n.textContent).join();
+    if (pills !== 'mein x,mein y,meine Richtung,Stern x,Stern y') bad.push('pills ' + pills);
+    const slot = q('#progList .blk[data-path="[0]"] [data-slot]');
+    if (!slot || !A.dropValue({ p: 'x' }, JSON.parse(slot.dataset.slot)) || JSON.stringify(A.prog[0].x) !== '{"p":"x"}') bad.push('mein x pill: ' + JSON.stringify(A.prog[0]));
+    const condSel = q('#progList .blk[data-path="[1]"] select.cond');
+    const opts = condSel ? Array.from(condSel.options).map((o) => o.value) : [];
+    if (!opts.includes('mapFront') || !opts.includes('@cell')) bad.push('condition picker: ' + opts.join());
+    if (condSel) {
+      condSel.value = '@cell';
+      condSel.dispatchEvent(new Event('change'));
+      if (JSON.stringify(A.prog[1].cond) !== '{"x":0,"y":0,"dir":1}' || document.querySelectorAll('#progList .blk[data-path="[1]"] > .row [data-slot]').length !== 3) bad.push('Feld \u2026: ' + JSON.stringify(A.prog[1].cond));
+    }
+    const withMap = [];
+    for (let i = 0; i < A.LEVELS.length; i++) {
+      A.goLevel(i);
+      if (q('#paletteList .cat-map')) withMap.push(A.LEVELS[i].id);
+    }
+    if (withMap.join() !== '7') bad.push('Karte box on tasks ' + withMap.join());
+    A.goLevel(A.LEVELS.findIndex((l) => l.id === 4));
+    A.setProg([B('ifElse', { cond: 'frontFree', body: [], alt: [] })]);
+    const o4 = Array.from(q('#progList select.cond').options).map((o) => o.value);
+    if (o4.includes('mapFront')) bad.push('map conditions offered on task 4');
+    A.setProg([]);
+    A.goLevel(own);
+    A.setVars([]);
+    A.setProg([]);
+    return { id: 'mapUi', ok: !bad.length, detail: 'Karte box on task 7 only: four blocks, five value pills (mein x ... Stern y) that land on a number field, map conditions in the picker (not on task 4), "Feld \u2026" with three fields: ' +
+             (bad.length ? 'BAD ' + bad.join('; ') : 'all right') };
+  }
+
+  /* The flood fill, built from blocks only: Karte-Bausteine, loops,
+     variables, lists and two own blocks - no sensor condition, no help
+     from the page. Each round: note the walls here, flood the map from the
+     star (an unknown wall counts as open), go to the neighbour with the
+     smallest number. Directions 1-4 = N E S W; DX/DY: the step per
+     direction; QX/QY: the queue; I: where it is read. */
+  const FLOOD = (() => {
+    const v = Vv;
+    return {
+      vars: ['I', 'FX', 'FY', 'D', 'N', 'R', 'NX', 'NY', 'H', 'Z'],
+      lists: ['DX', 'DY', 'QX', 'QY'],
+      funcs: [
+        { name: 'Nachbar', body: [                                /* NX, NY: the neighbour of FX, FY in direction R; N its number */
+          B('listGet', { v: 'NX', i: v('R'), l: 'DX' }),
+          B('changeVar', { v: 'NX', n: v('FX') }),
+          B('listGet', { v: 'NY', i: v('R'), l: 'DY' }),
+          B('changeVar', { v: 'NY', n: v('FY') }),
+          B('mapGet', { v: 'N', x: v('NX'), y: v('NY') }),
+        ] },
+        { name: 'Flut', body: [                                   /* the numbers: 0 on the star, +1 per cell */
+          B('mapClear'),
+          B('mapSet', { x: P('sx'), y: P('sy'), n: 0 }),
+          B('listClear', { l: 'QX' }),
+          B('listClear', { l: 'QY' }),
+          B('listAdd', { l: 'QX', n: P('sx') }),
+          B('listAdd', { l: 'QY', n: P('sy') }),
+          B('setVar', { v: 'I', n: 1 }),
+          B('repeatUntil', { cond: { v: 'I', op: '>', n: { len: 'QX' } }, body: [
+            B('listGet', { v: 'FX', i: v('I'), l: 'QX' }),
+            B('listGet', { v: 'FY', i: v('I'), l: 'QY' }),
+            B('mapGet', { v: 'D', x: v('FX'), y: v('FY') }),
+            B('changeVar', { v: 'D', n: 1 }),
+            B('setVar', { v: 'R', n: 1 }),
+            B('repeat', { n: 4, body: [
+              B('ifElse', { cond: { x: v('FX'), y: v('FY'), dir: v('R') }, body: [
+                B('call', { f: 'Nachbar' }),
+                B('ifElse', { cond: V('N', '=', -1), body: [
+                  B('mapSet', { x: v('NX'), y: v('NY'), n: v('D') }),
+                  B('listAdd', { l: 'QX', n: v('NX') }),
+                  B('listAdd', { l: 'QY', n: v('NY') }),
+                ], alt: [] }),
+              ], alt: [] }),
+              B('changeVar', { v: 'R', n: 1 }),
+            ] }),
+            B('changeVar', { v: 'I', n: 1 }),
+          ] }),
+        ] },
+      ],
+      prog: [
+        B('listAdd', { l: 'DX', n: 0 }), B('listAdd', { l: 'DX', n: 1 }), B('listAdd', { l: 'DX', n: 0 }), B('listAdd', { l: 'DX', n: -1 }),
+        B('listAdd', { l: 'DY', n: 1 }), B('listAdd', { l: 'DY', n: 0 }), B('listAdd', { l: 'DY', n: -1 }), B('listAdd', { l: 'DY', n: 0 }),
+        B('repeatUntil', { cond: V('H', '<', 0), body: [                /* until no way is left (-1 here) */
+          B('mapWalls'),
+          B('call', { f: 'Flut' }),
+          B('setVar', { v: 'FX', n: P('x') }),
+          B('setVar', { v: 'FY', n: P('y') }),
+          B('mapGet', { v: 'H', x: v('FX'), y: v('FY') }),
+          B('setVar', { v: 'R', n: 1 }),
+          B('repeat', { n: 4, body: [                                /* Z: the open direction downhill */
+            B('ifElse', { cond: { x: v('FX'), y: v('FY'), dir: v('R') }, body: [
+              B('call', { f: 'Nachbar' }),
+              B('ifElse', { cond: V('N', '<', v('H')), body: [
+                B('setVar', { v: 'H', n: v('N') }),
+                B('setVar', { v: 'Z', n: v('R') }),
+              ], alt: [] }),
+            ], alt: [] }),
+            B('changeVar', { v: 'R', n: 1 }),
+          ] }),
+          B('repeatUntil', { cond: V('Z', '=', P('d')), body: [B('right')] }),
+          B('move'),
+        ] }),
+      ],
+    };
+  })();
+  const FLOOD_TYPES = ['listAdd', 'listGet', 'listClear', 'setVar', 'changeVar', 'mapWalls', 'mapClear', 'mapSet', 'mapGet',
+                       'repeat', 'repeatUntil', 'ifElse', 'call', 'right', 'move'];
+
+  function loadFlood(own, maze) {
+    A.goLevel(own);
+    A.setSandbox(maze);
+    if (maze.random) A.randomize();
+    A.setVars(FLOOD.vars);
+    A.setLists(FLOOD.lists);
+    A.setFuncs(clone(FLOOD.funcs));
+    A.setProg(clone(FLOOD.prog));
+    A.clearResult();
+    A.resetRun();
+  }
+
+  /* shortest path from the start to the star in the drawn maze */
+  function shortest(mz) {
+    const d = walk(mz, mz.start);
+    return d.get(mz.goal.x + ',' + mz.goal.y);
+  }
+
+  async function floodCheck(own, runs) {
+    const bad = [];
+    /* the fixture really uses only these blocks, and never a sensor */
+    const types = new Set();
+    let sensor = false;
+    const scan = (list) => { for (const b of list) { types.add(b.t); if (typeof b.cond === 'string') sensor = true; if (b.body) scan(b.body); if (b.alt) scan(b.alt); } };
+    scan(FLOOD.prog);
+    FLOOD.funcs.forEach((f) => scan(f.body));
+    const extra = Array.from(types).filter((ty) => !FLOOD_TYPES.includes(ty));
+    if (extra.length || sensor) bad.push('fixture uses ' + extra.join() + (sensor ? ' and a sensor condition' : ''));
+    let won = 0, thinks = 0, extraMoves = 0, numbered = true;
+    const blocks = [];
+    for (let r = 0; r < runs; r++) {
+      loadFlood(own, { n: 5, walls: [], exits: [], goal: { x: 2, y: 3 }, random: true });
+      const mz = A.exportData().maze;
+      await A.runAll();
+      const res = await verdict();
+      if (res.win && A.world.bot.x === mz.goal.x && A.world.bot.y === mz.goal.y) won++;
+      else bad.push('maze ' + (r + 1) + ': ' + res.reason);
+      thinks = Math.max(thinks, A.thinks);
+      extraMoves = Math.max(extraMoves, A.stats.moves - shortest(mz));
+      if (document.querySelectorAll('#mapNums text.map-num').length !== 25) numbered = false;
+      blocks.push(A.stats.blocks);
+    }
+    if (!numbered) bad.push('the 25 flood numbers are not drawn');
+    /* It does not know the maze, it explores: in this 3x3 the way along the
+       top looks as short as the real one along the bottom, and the robot
+       only sees the two hidden walls when it stands next to them - 8 cells
+       instead of the shortest 4. */
+    loadFlood(own, { n: 3, walls: ['1,2,E', '1,1,E'], exits: [], goal: { x: 2, y: 2 } });
+    await A.runAll();
+    const trap = await verdict();
+    if (!trap.win || A.stats.moves !== 8) bad.push('trap maze: ' + trap.reason + ' after ' + A.stats.moves + ' cells (want 8)');
+    return { id: 'flood', ok: !bad.length && won === runs,
+             detail: 'flood fill built from blocks (' + blocks[0] + ' blocks: Karte-Bausteine, loops, variables, lists, 2 own blocks; no sensor) solves ' + won + '/' + runs +
+                     ' random 5x5 mazes from (0,0) to the star; at most ' + extraMoves + ' cells more than the shortest way while exploring; at most ' + thinks +
+                     ' thinking actions (budget ' + A.maxThinksFor(5) + '); all 25 numbers drawn; explores a trap 3x3 in 8 cells (shortest 4) as it learns the walls' +
+                     (bad.length ? ' - BAD ' + bad.join('; ') : '') };
+  }
+
+  /* The same flood fill with a stand-in robot: "merke Waende hier" asks
+     WALLS and the map holds what the robot answered; nothing but CELL, TURN
+     and WALLS goes out. Then a robot that reports a wall the drawing does
+     not have: the map believes the robot. A silent robot: the message. */
+  async function floodBotCheck(own) {
+    const bad = [];
+    const lines = [];
+    let res, mz;
+    try {
+      loadFlood(own, { n: 5, walls: [], exits: [], goal: { x: 2, y: 3 }, random: true });
+      mz = A.exportData().maze;
+      A.fakeRobot((line) => { lines.push(line); return botReply(line); });
+      await A.runAll();
+      res = await verdict();
+    } finally {
+      A.fakeRobot(null);
+    }
+    const n = (k) => lines.filter((l) => l === k).length;
+    const other = lines.filter((l) => !['CELL', 'TURN 90', 'WALLS'].includes(l));
+    if (!res.win) bad.push('not solved: ' + res.reason);
+    if (other.length) bad.push('other lines: ' + other.join());
+    if (n('WALLS') !== n('CELL')) bad.push(n('WALLS') + ' WALLS for ' + n('CELL') + ' cells (one per round)');
+    /* every remembered side matches the maze the stand-in robot reports from */
+    const w = A.world, known = A.mapState.known;
+    const wrong = Object.keys(known).filter((k) => { const [x, y, d] = k.split(','); return known[k] !== !!w.walls[+x][+y][d]; });
+    if (wrong.length || !Object.keys(known).length) bad.push('map differs from the robot at ' + wrong.join(' '));
+    /* phantom wall: the robot says "wall ahead", the drawing has none */
+    let phantom, plain;
+    try {
+      A.goLevel(own);
+      A.setSandbox(EMPTY3);
+      A.setFuncs([]); A.setLists([]); A.setVars([]);
+      A.setProg([B('mapWalls')]);
+      A.clearResult();
+      A.resetRun();
+      A.fakeRobot((line) => (line === 'WALLS' ? ['WALLS: F=60(wall) L=300 R=300'] : []));
+      await A.runAll();
+      await verdict();
+      phantom = A.mapState.known;
+      A.fakeRobot(null);
+      A.clearResult();
+      A.resetRun();
+      await A.runAll();
+      await verdict();
+      plain = A.mapState.known;
+      A.setTimeScale(0.01);
+      A.fakeRobot(() => []);
+      A.clearResult();
+      A.resetRun();
+      await A.runAll();
+    } finally {
+      A.fakeRobot(null);
+      A.setTimeScale(1);
+    }
+    const silent = (await verdict()).reason;
+    if (phantom['0,0,N'] !== true || phantom['0,0,E'] !== false || plain['0,0,N'] !== false) bad.push('phantom wall: robot ' + JSON.stringify(phantom) + ', drawing ' + JSON.stringify(plain));
+    if (silent !== 'botSilent') bad.push('silent robot: ' + silent);
+    return { id: 'floodBot', ok: !bad.length, detail: 'stand-in robot: the block flood fill solves a random 5x5 sending only CELL, TURN 90 and WALLS (' + n('CELL') + ' CELL, ' + n('TURN 90') + ' TURN, ' + n('WALLS') +
+             ' WALLS), its map equals the robot\'s answers; a wall only the robot reports goes into the map; no answer to WALLS: botSilent' + (bad.length ? ' - BAD ' + bad.join('; ') : '') };
+  }
+
+  /* Files: the map blocks, the map conditions and the position values are
+     version 3 and open again unchanged; bad ones are refused. */
+  function mapFileChecks(own) {
+    const out = [];
+    const add = (id, ok, detail) => out.push({ id, ok: !!ok, detail });
+    loadFlood(own, { n: 5, walls: [], exits: [], goal: { x: 4, y: 4 } });
+    const d = A.exportData();
+    const b = A.parseFile(JSON.stringify(d));
+    add('mapFile1', d.version === 3 && b && JSON.stringify(b.prog) === JSON.stringify(d.prog) && JSON.stringify(b.funcs) === JSON.stringify(d.funcs) &&
+        JSON.stringify(b.lists) === '["DX","DY","QX","QY"]',
+        'version 3: the flood fill (map blocks, "Feld x y nach r", mein x / Stern x) saves and opens again unchanged');
+    const F = (prog) => JSON.stringify({ version: 3, level: 7, lang: 'de', vars: ['a'], lists: [], prog });
+    const bad = [
+      F([B('mapSet', { x: 0, y: 0 })]),
+      F([B('mapSet', { x: { p: 'z' }, y: 0, n: 1 })]),
+      F([B('mapGet', { x: 0, y: 0 })]),
+      F([B('mapGet', { v: 'b', x: 0, y: 0 })]),
+      F([B('ifElse', { cond: 'mapUp', body: [], alt: [] })]),
+      F([B('ifElse', { cond: { x: 0, y: 0 }, body: [], alt: [] })]),
+      F([B('ifElse', { cond: { x: 0, y: '0', dir: 1 }, body: [], alt: [] })]),
+      F([B('ifElse', { cond: { x: 0, y: 0, dir: { p: 'q' } }, body: [], alt: [] })]),
+      JSON.stringify({ version: 2, level: 7, lang: 'de', vars: ['a'], prog: [B('ifElse', { cond: 'mapFront', body: [], alt: [] })] }),
+      JSON.stringify({ version: 2, level: 7, lang: 'de', vars: ['a'], prog: [B('setVar', { v: 'a', n: { p: 'x' } })] }),
+      JSON.stringify({ version: 2, level: 7, lang: 'de', vars: ['a'], prog: [B('mapWalls')] }),
+    ];
+    const through = bad.filter((txt) => A.parseFile(txt) !== null);
+    add('mapFile2', !through.length, bad.length + ' broken files with map blocks refused (missing fields, unknown values or conditions, version 2 with map content)' +
+        (through.length ? ' - LET THROUGH: ' + through.join(' | ') : ''));
+    A.setFuncs([]); A.setLists([]); A.setVars([]); A.setProg([]);
+    return out;
+  }
+
+  /* Profi-Woerter on the new blocks too: lists, map, own blocks, values */
+  async function profiNewCheck(own) {
+    const bad = [];
+    const q = (s) => document.querySelector(s);
+    const kws = (sel) => (q(sel) ? Array.from(q(sel).querySelectorAll(':scope > .row .lbl .kw')).map((k) => k.textContent).join('|') : '?');
+    const btn = q('#profiBtn');
+    A.goLevel(own);
+    A.setVars(['a']);
+    A.setLists(['Weg']);
+    A.setFuncs([{ name: 'Flut', body: [] }]);
+    A.setProg([]);
+    if (!A.profi) btn.click();
+    const want = { listAdd: 'add|to', listSet: 'replace item|of|with', listGet: 'set|to item|of', listClear: 'delete all of', mapSet: 'set|to', mapGet: 'set|to' };
+    for (const ty in want) { const k = kws('#paletteList .blk[data-type="' + ty + '"]'); if (k !== want[ty]) bad.push(ty + ': ' + k); }
+    if (kws('#defList .blk.def') !== 'define') bad.push('definition: ' + kws('#defList .blk.def'));
+    const pill = q('#paletteList .cat-list .val-pill');
+    if (!pill || pill.textContent !== 'length of Weg') bad.push('pill ' + (pill && pill.textContent));
+    if (labelText(q('#paletteList .blk[data-type="mapWalls"] .lbl')) !== 'merke W\u00e4nde hier') bad.push('robot words changed');
+    btn.click();
+    if (kws('#defList .blk.def') !== '' || labelText(q('#defList .blk.def .lbl')) !== 'definiere Flut' || q('#paletteList .cat-list .val-pill').textContent !== 'L\u00e4nge von Weg') bad.push('off again');
+    A.setFuncs([]); A.setLists([]); A.setVars([]);
+    return { id: 'profiNew', ok: !bad.length, detail: 'Profi-W\u00f6rter on lists (add, replace item, item, delete all, length of), map (set ... to), own blocks (define); robot words stay; off again: ' +
+             (bad.length ? 'BAD ' + bad.join('; ') : 'all right') };
+  }
+
+  /* The rail links to the sister pages, in both languages. */
+  function linkCheck() {
+    const get = () => ['driveLink', 'learnLink', 'shopLink'].map((id) => {
+      const a = document.getElementById(id);
+      return a ? a.textContent + '>' + a.getAttribute('href') : 'MISSING ' + id;
+    }).join(', ');
+    const lb = document.getElementById('langBtn');
+    if (A.lang !== 'de') lb.click();
+    const de = get();
+    lb.click();
+    const en = get();
+    lb.click();
+    const ok = de === 'Fernsteuerung>drive.html, Lernen>learn.html, Werkstatt>werkstatt.html' &&
+               en === 'Remote control>drive.html, Learn>learn.html, Workshop>werkstatt.html' && A.lang === 'de';
+    return { id: 'links', ok, detail: 'rail links: ' + de + ' | ' + en };
+  }
+
+  /* A block label as a pupil reads it: a picker counts as its chosen
+     entry, a number field as its number. */
+  function labelText(node) {
+    const walk = (n) => {
+      if (n.nodeType === 3) return n.textContent;
+      if (n.nodeType !== 1) return '';
+      if (n.tagName === 'SELECT') return ' ' + (n.selectedOptions[0] ? n.selectedOptions[0].textContent : '') + ' ';
+      if (n.tagName === 'INPUT') return ' ' + n.value + ' ';
+      if (n.tagName === 'BUTTON') return '';
+      return Array.from(n.childNodes).map(walk).join('');
+    };
+    return walk(node).replace(/\s+/g, ' ').trim();
+  }
+
+  /* Profi-Woerter: through the rail button, in German and in English, on
+     and off. The block labels switch to the keywords of real code (drawn
+     as code), robot words and conditions stay in the language, help texts
+     and tasks do not change, the program does not change, a run still wins,
+     and the setting goes into localStorage. */
+  async function profiCheck(own, i9) {
+    const bad = [];
+    const q = (s) => document.querySelector(s);
+    const btn = q('#profiBtn'), langBtn = q('#langBtn');
+    const blk = (ty) => q('#paletteList .blk[data-type="' + ty + '"]');
+    const lbl = (ty) => (blk(ty) ? labelText(blk(ty).querySelector(':scope > .row .lbl')) : '?');
+    const kws = (ty) => (blk(ty) ? Array.from(blk(ty).querySelectorAll(':scope > .row .lbl .kw')).map((k) => k.textContent).join('|') : '?');
+    const elseLbl = () => (blk('ifElse') ? blk('ifElse').querySelector(':scope > .mid .lbl').textContent.trim() : '?');
+    const tipText = (key) => {
+      const i = q('[data-tip-key="' + key + '"]');
+      i.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
+      const s = q('#tip').textContent;
+      q('#tip').hidden = true;
+      return s;
+    };
+    const setProfi = (on) => { if (A.profi !== on) btn.click(); };
+    const setLang = (l) => { if (A.lang !== l) langBtn.click(); };
+    setLang('de');
+    setProfi(false);
+    A.goLevel(own);
+    A.setSandbox(EMPTY3);
+    A.setVars(['Schritte']);
+    const prog = [B('repeatUntil', { cond: V('Schritte', '=', 2), body: [B('ifElse', { cond: 'frontFree', body: [B('move'), B('changeVar', { v: 'Schritte', n: 1 })], alt: [B('right')] })] })];
+    A.setProg(clone(prog));
+    const task = q('#taskBox').textContent, tip = tipText('i_vars'), head = q('#t-palette').textContent;
+    if (!/^wenn /.test(lbl('ifElse')) || !/^wiederhole 3 mal/.test(lbl('repeat')) || document.querySelector('.blk .kw')) bad.push('off: ' + lbl('ifElse') + ' / ' + lbl('repeat'));
+    setProfi(true);
+    const want = { ifElse: 'if', repeat: 'repeat|times', repeatUntil: 'repeat until', untilOut: 'repeat until', setVar: 'set|to', changeVar: 'change|by', showVar: 'show' };
+    for (const ty in want) if (kws(ty) !== want[ty]) bad.push('de ' + ty + ': ' + kws(ty));
+    if (elseLbl() !== 'else') bad.push('de else: ' + elseLbl());
+    if (lbl('move') !== 'fahre 1 Feld' || lbl('untilOut') !== 'repeat until drau\u00dfen' || lbl('ifElse') !== 'if rechts frei') bad.push('de robot words: ' + lbl('move') + ' / ' + lbl('untilOut') + ' / ' + lbl('ifElse'));
+    const inProg = q('#progList .blk[data-type="repeatUntil"] > .row .lbl .kw');
+    if (!inProg || inProg.textContent !== 'repeat until') bad.push('program blocks not relabelled');
+    if (q('#taskBox').textContent !== task || tipText('i_vars') !== tip || q('#t-palette').textContent !== head) bad.push('help or task text changed');
+    if (JSON.stringify(A.prog) !== JSON.stringify(prog)) bad.push('program changed');
+    if (A.storeData().profi !== true || q('#profiBtn').getAttribute('aria-pressed') !== 'true') bad.push('not stored / not pressed');
+    setLang('en');
+    for (const ty in want) if (kws(ty) !== want[ty]) bad.push('en ' + ty + ': ' + kws(ty));
+    if (lbl('untilOut') !== 'repeat until out' || lbl('move') !== 'move 1 cell' || lbl('ifElse') !== 'if right is free') bad.push('en labels: ' + lbl('untilOut') + ' / ' + lbl('ifElse'));
+    if (!/Your own maze.*Build your maze/.test(q('#taskBox').textContent) || !/named note/.test(tipText('i_vars'))) bad.push('en help or task text not English');
+    setProfi(false);
+    if (lbl('ifElse') !== 'if right is free' || document.querySelector('.blk .kw')) bad.push('en off: ' + lbl('ifElse'));
+    setProfi(true);
+    setLang('de');
+    /* with Profi-Woerter on, task 9 is still solved the same way */
+    const p = await playLevel(i9, ['Schritte'], SOLUTIONS[9]);
+    if (!(p.solved === 3 && p.stars === 3)) bad.push('task 9 with Profi-W\u00f6rter: ' + p.solved + '/3');
+    setProfi(false);
+    if (!/^wenn /.test(lbl('ifElse')) || A.storeData().profi !== false) bad.push('back off: ' + lbl('ifElse'));
+    return { id: 'profi', ok: !bad.length,
+             detail: 'Profi-W\u00f6rter on/off in German and English: keywords if/else/repeat/repeat until/set/change/show as code, robot words stay, help and tasks unchanged, program unchanged, task 9 still 3/3, stored: ' +
+             (bad.length ? 'BAD ' + bad.join('; ') : 'all right') };
+  }
+
   /* offline: the display font must come from web/fonts, not from the web */
   async function fontCheck() {
     let faces = [];
@@ -891,6 +1786,30 @@
     out.push(await guard('botVar', () => botVarCheck(i8, i9)));
     try { out.push(...varFileChecks(i9, own)); }
     catch (e) { out.push({ id: 'fileVar', ok: false, detail: 'threw: ' + e.message }); }
+    out.push(await guard('profi', () => profiCheck(own, i9)));
+    out.push(await guard('funcUi', () => funcUiCheck(own)));
+    out.push(await guard('funcRun', () => funcRunCheck(own)));
+    out.push(await guard('funcRec', () => funcRecCheck(own)));
+    try { out.push(...funcFileChecks(own)); }
+    catch (e) { out.push({ id: 'funcFile', ok: false, detail: 'threw: ' + e.message }); }
+    out.push(await guard('listUi', () => listUiCheck(own)));
+    out.push(await guard('listRun', () => listRunCheck(own)));
+    try { out.push(...await listErrCheck(own)); }
+    catch (e) { out.push({ id: 'listErr', ok: false, detail: 'threw: ' + e.message }); }
+    out.push(await guard('listWatch', () => listWatchCheck(own)));
+    out.push(await guard('opUi', () => opUiCheck(own)));
+    try { out.push(...listFileChecks(own)); }
+    catch (e) { out.push({ id: 'listFile', ok: false, detail: 'threw: ' + e.message }); }
+    out.push(await guard('mapRun', () => mapRunCheck(own)));
+    out.push(await guard('mapErr', () => mapErrCheck(own)));
+    out.push(await guard('mapDraw', () => mapDrawCheck(own)));
+    out.push(await guard('mapUi', () => mapUiCheck(own)));
+    out.push(await guard('flood', () => floodCheck(own, 5)));
+    out.push(await guard('floodBot', () => floodBotCheck(own)));
+    try { out.push(...mapFileChecks(own)); }
+    catch (e) { out.push({ id: 'mapFile', ok: false, detail: 'threw: ' + e.message }); }
+    out.push(await guard('profiNew', () => profiNewCheck(own)));
+    out.push(await guard('links', async () => linkCheck()));
     out.push(await fontCheck());
     A.setFast(false);
 

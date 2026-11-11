@@ -16,7 +16,7 @@ simulator but cannot connect a robot (no Web Serial).
 | `web/code.html` | Page structure and the maze robot sprite (SVG `<defs>`) |
 | `web/code.css` | All styling, and the `@font-face` for Fredoka |
 | `web/code-data.js` | Blocks, German/English texts, the nine levels |
-| `web/code.js` | Editor, drag and drop, simulator, interpreter, variables and watch panel, robot link, own maze, program files |
+| `web/code.js` | Editor, drag and drop, simulator, interpreter, variables, lists, own blocks, the robot's map, watch panel, robot link, own maze, program files |
 | `web/code-selftest.js` | Plays a known solution for every level, checks files and font (see below) |
 | `web/fonts/` | Fredoka (`fredoka-latin.woff2`) and its licence `OFL.txt` |
 | `web/drive.html`, `drive.css`, `drive.js` | **Fernsteuerung** — the remote-control page (see below) |
@@ -26,6 +26,11 @@ simulator but cannot connect a robot (no Web Serial).
 
 Separate from the Maker Faire page (`web/maze_event.html`), which is
 unchanged and still the one that drives a full escape run.
+
+The top bar links the sister pages — **Fernsteuerung** (`drive.html`),
+**Lernen** (`learn.html`, the explainers) and **Werkstatt**
+(`werkstatt.html`) — and holds the **Profi-Wörter** button and the
+language switch.
 
 The JS files are plain ASCII: umlauts and symbols are written as `\u` escapes
 (`'Gr\u00f6\u00dfe'`), so no editor or shell can garble them.
@@ -43,9 +48,21 @@ The JS files are plain ASCII: umlauts and symbols are written as `\u` escapes
 | `setze <Variable> auf <n>` | the variable gets the number n |
 | `ändere <Variable> um <n>` | add n to the variable (n may be negative: −1 counts down) |
 | `zeige <Variable>` | the value as a speech bubble over the robot, and in the log under the watch panel |
+| `füge <n> zu <Liste> hinzu` | add n at the end of the list |
+| `ersetze Element <i> von <Liste> durch <n>` | item i becomes n |
+| `setze <Variable> auf Element <i> von <Liste>` | read item i into a variable |
+| `lösche alles aus <Liste>` | empty the list |
+| `merke Wände hier` | the robot notes the walls front, left and right of its cell in its map |
+| `lösche alle Zahlen` | every number on the map becomes empty (−1) |
+| `setze Zahl von Feld <x> <y> auf <n>` | write a number into a cell of the map |
+| `setze <Variable> auf Zahl von Feld <x> <y>` | read a cell's number (−1 if empty) |
+| `<Name>` (own block) | runs the blocks of its definition `definiere <Name>` |
 
 Colours: Fahren blue, Wiederholen green, Entscheiden purple, **Variablen
-orange** (`--c-var`, Scratch-like, dark enough for white text).
+orange** (`--c-var`, Scratch-like, dark enough for white text), **Listen**
+a deeper orange (`--c-list`, kin to the variables as in Scratch), **Karte**
+teal (`--c-map`), **Meine Bausteine** pink (`--c-func`). Lists, map and own
+blocks are in the box of task 7 only (see *Levels*).
 
 **Conditions.** A condition is *either* a **sensor condition** — one of six
 strings, front/left/right each as "free" or "wall" (`'frontFree'`,
@@ -54,7 +71,14 @@ block) — *or* a **comparison** `{v, op, n}`: variable `v` compared with the
 number `n`, `op` one of `=`, `>`, `<`. Both kinds work in `wenn` and in
 `wiederhole bis`. On the page it is one picker: the sensor conditions and,
 below them, the program's variables; choosing a variable adds the `= > <`
-picker and the number. Old programs (a string) are unchanged.
+picker and the number. Old programs (a string) are unchanged. On task 7 the
+picker also has the **map conditions** (see *Karten-Bausteine*):
+`vorne/rechts/links offen laut Karte` (`'mapFront'`, `'mapRight'`,
+`'mapLeft'`) and `Feld x y nach r offen` (`{x, y, dir}`).
+
+Every number field (`setze`, `ändere`, comparisons, the list and map
+blocks; not the 1–9 of `wiederhole … mal`) holds a number **or a value read
+when the block runs** — see *Values in number fields*.
 
 Blocks are plain objects — `{t:'repeat', n:3, body:[…]}`,
 `{t:'changeVar', v:'Schritte', n:1}`,
@@ -91,7 +115,203 @@ program is JSON. A path addresses one block, alternating index and key:
   Nothing changed in the firmware.
 - **Runaway guard.** Every variable block is one action and `wiederhole bis`
   costs one action per check, so a condition that never comes true ends with
-  "läuft zu lange" like any endless loop.
+  "läuft zu lange" like any endless loop (see *Thinking* for the two
+  budgets).
+
+## Values in number fields
+
+A number field holds a number (typed, or − and +) or a **value**, stored as
+`{v: "Schritte"}` (a variable), `{len: "Weg"}` (how many items a list has)
+or `{p: "x"}` (the robot's position, task 7). Two ways to put one in:
+
+- the small **▾** after the number opens a picker: *Zahl*, the variables,
+  `Länge von <Liste>`, and on task 7 the group *Roboter*;
+- the round **value pills** in the box — `Länge von Weg` under Listen,
+  `mein x`, `mein y`, `meine Richtung`, `Stern x`, `Stern y` under Karte —
+  are dragged onto a number field (it lights gold).
+
+A field with a value shows it as a picker sized to its name; choosing
+*Zahl* turns it back into 0. Comparisons work the same way, so
+`wiederhole bis I > Länge von QX` and `wenn N < H` are possible.
+
+## Profi-Wörter
+
+The button **{ } Profi-Wörter** in the top bar (next to the language,
+stored in `localStorage` as `profi`) puts the keywords of real programming
+languages on the blocks, set as code: `if … else`, `repeat 3 times`,
+`repeat until …`, `set … to …`, `change … by …`, `show …`, `add … to …`,
+`replace item … of … with …`, `set … to item … of …`, `delete all of …`,
+`length of …`, `define …`. Robot words (`fahre 1 Feld`, `vorne frei`,
+`merke Wände hier`, `Zahl von Feld`) stay in the chosen language, and so do
+the tips, help texts, tasks and messages — the bridge from German blocks
+to real syntax, in German and in English. Only labels change: the program,
+its file and its block count are the same. Templates: `p_…` keys in
+`code-data.js`; `[…]` marks a keyword (`.kw`, drawn in the system
+monospace font).
+
+## Lists
+
+- **Listen** in the box (task 7): **Neue Liste** works like Neue Variable
+  (suggestion `Weg`, then `Liste`; English `Path`, `List`). Names follow the
+  variable rules and share **one name space** with the variables — a list
+  and a variable never have the same name (case ignored). At most 8 lists.
+  Chips with × delete one, only while no block (and no `Länge von`) uses it.
+- Blocks (Scratch's German words): `füge n zu L hinzu`, `ersetze Element i
+  von L durch n`, `setze V auf Element i von L`, `lösche alles aus L`, and
+  the value `Länge von L`. Items are numbered **from 1**, like Scratch.
+- **Every run starts with every list empty.** At most 1000 items.
+- **Mistakes end the run with a message:** an item that is not there —
+  "In der Liste Z gibt es kein Element 3 – sie hat 2 Elemente. Gezählt wird
+  ab 1." (singular and empty list have their own wording) — and the 1001st
+  item ("… ist voll"). A crash never happens; it is a lost run like a wall.
+- **Watch panel:** under the variables, one row per list — numbered boxes,
+  the item that changed last in gold, "leer" when empty, the first 30 items
+  and "… und n weitere". Shown as soon as there is a list, even without a
+  variable.
+
+## Own blocks (Meine Bausteine)
+
+- **Meine Bausteine** in the box (task 7): **Neuer Baustein** opens the name
+  field (suggestion `Mein Baustein`). Names: letters, digits and single
+  spaces, a letter first, up to 16, unique ignoring case; at most 8.
+- The definition appears **under the program**, after *Ende*: a pink block
+  `definiere Name` with a belly — blocks are dragged in like into any loop.
+  The box shows a block `Name` for each one; it is used like any block.
+  × on the definition deletes it (with its blocks) — only while unused.
+- **No parameters** (v1). Variables and lists are shared with the program.
+- **No recursion.** A drop that would make a block use itself — directly,
+  through another own block, or hidden in a loop — is refused with "Ein
+  Baustein darf sich nicht selbst benutzen – auch nicht über einen anderen.
+  Das hörte nie auf."; a file with such a loop does not open; and should one
+  be made by hand anyway, the run ends with the same message (depth guard).
+- While running, the block inside the definition gets the gold ring and the
+  use it came from a fainter one.
+- **Counting (stars, counters, files):** every block counts once where it
+  stands. A definition counts **1 for its head plus the blocks inside it —
+  once, however often it is used** — and each use counts 1. So a body of b
+  blocks used k times costs 1 + b + k instead of k·b written out: it saves
+  blocks only when (k−1)(b−1) > 2 — 4 blocks twice, 3 blocks three times,
+  2 blocks four times — and only for repeats that are *not* side by side
+  (side by side, `wiederhole` costs 1 + b and is always cheaper). The best
+  solutions of tasks 1–6, 8 and 9 have no such repeat, so an own block can
+  never earn a star a loop could not, and no par changes. Own blocks are in
+  task 7's box only (no stars there); a file opened into another task keeps
+  them and is counted by the same rule.
+
+## Karten-Bausteine (the robot's map)
+
+The robot's own memory of the maze, for task 7: what curriculum module 7
+plays unplugged and module 8 (P5–P7) builds as a flood fill.
+
+- **The map** has a number for every cell — **−1 means empty** — and the
+  walls the robot has remembered. It is empty at the start of every run
+  (and of every maze of a task with several). Cell (0,0) is bottom left, as
+  in the firmware.
+- `merke Wände hier` writes down what the **three sensors** see — front,
+  left and right of the cell the robot stands on (nothing behind: there is
+  no sensor). In the simulation from the drawing, with **Echter Roboter**
+  from the robot's answer to `WALLS` (the robot is the truth: a wall it
+  reports that the drawing lacks goes into the map). A wall is noted for
+  both cells it divides. Outside the maze it notes nothing.
+- A wall the map does not know **counts as open** — optimistic, like the
+  robot's own `GO`. The border is always closed (the map ends there; an
+  opening in task 7's outer wall is not on the map).
+- Conditions: `vorne/rechts/links offen laut Karte` (that side of the
+  robot's cell) and `Feld x y nach r offen` for any cell; **directions are
+  numbers: 1 Norden, 2 Osten, 3 Süden, 4 Westen** (so a variable can go
+  round them with `ändere R um 1`, and they index a list).
+- Numbers: `setze Zahl von Feld x y auf n`, `setze V auf Zahl von Feld x
+  y`, `lösche alle Zahlen`.
+- Values: `mein x`, `mein y`, `meine Richtung` (1–4), `Stern x`, `Stern y`
+  (−1 without a star) — in the picker and as pills.
+- Mistakes end the run with a message: a cell off the map ("Das Feld (5, 0)
+  gibt es nicht – die Karte geht von 0 bis 4."), a direction other than 1–4.
+- **Drawn in the maze:** every number the program writes appears faintly in
+  its cell (with a dark halo over the trail; the one written last in gold),
+  and every remembered wall gets a thin gold line. Numbers are left out
+  when cells are smaller than 14 units (above 26×26). Zurück clears.
+
+**Example: the flood fill, built from blocks** (the self-test fixture, 54
+blocks; it solves random 5×5 mazes from (0,0) to the star in the
+simulation and with a stand-in robot). Lists `DX`, `DY` (the step per
+direction), `QX`, `QY` (the queue); variables `I`, `FX`, `FY`, `D`, `N`,
+`R`, `NX`, `NY`, `H`, `Z`:
+
+```
+füge 0, 1, 0, −1 zu DX hinzu          (four blocks)
+füge 1, 0, −1, 0 zu DY hinzu          (four blocks)
+wiederhole bis H < 0
+    merke Wände hier
+    Flut
+    setze FX auf mein x
+    setze FY auf mein y
+    setze H auf Zahl von Feld FX FY
+    setze R auf 1
+    wiederhole 4 mal                   ← downhill: Z = the lowest open neighbour
+        wenn Feld FX FY nach R offen
+            Nachbar
+            wenn N < H
+                setze H auf N
+                setze Z auf R
+        ändere R um 1
+    wiederhole bis Z = meine Richtung
+        drehe nach rechts
+    fahre 1 Feld
+
+definiere Flut                         ← 0 on the star, +1 per cell (a queue)
+    lösche alle Zahlen
+    setze Zahl von Feld Stern x Stern y auf 0
+    lösche alles aus QX, lösche alles aus QY
+    füge Stern x zu QX hinzu, füge Stern y zu QY hinzu
+    setze I auf 1
+    wiederhole bis I > Länge von QX
+        setze FX auf Element I von QX
+        setze FY auf Element I von QY
+        setze D auf Zahl von Feld FX FY
+        ändere D um 1
+        setze R auf 1
+        wiederhole 4 mal
+            wenn Feld FX FY nach R offen
+                Nachbar
+                wenn N = −1
+                    setze Zahl von Feld NX NY auf D
+                    füge NX zu QX hinzu
+                    füge NY zu QY hinzu
+            ändere R um 1
+        ändere I um 1
+
+definiere Nachbar                      ← NX, NY: the cell next to FX, FY towards R; N its number
+    setze NX auf Element R von DX
+    ändere NX um FX
+    setze NY auf Element R von DY
+    ändere NY um FY
+    setze N auf Zahl von Feld NX NY
+```
+
+It does not know the maze: on a 3×3 whose short-looking way is blocked by
+two walls it can only see from next to them, it drives 8 cells where the
+shortest way is 4 — the "Optimist" of module 8, now built by the pupils.
+The run ends on the star (task 7's win), so the outer loop needs no end
+of its own; `H < 0` stops it only if the star cannot be reached.
+
+## Thinking: the Denk-Turbo and the two runaway guards
+
+Driving actions (`fahre`, `drehe`, a sensor question, `merke Wände hier`)
+move or ask the robot; **thinking actions** (variables, lists, map numbers,
+comparisons, map conditions, stepping into an own block) only touch the
+browser. A short row of thinking runs block by block as before (each
+`setze` about half a step). After **more than 12 thinking blocks in a row**
+the run switches to the *Denk-Turbo* for the rest of the run: thinking is
+quiet — the watch panel, the map and the highlight are painted a few times
+a second, not after every block — and as fast as the Tempo slider allows:
+slowest 25 ms per block (the flood can be watched filling the maze),
+second 6 ms, from the middle on at once. Driving never changes. Tasks 8
+and 9 never reach 12 in a row, so they look exactly as before.
+
+Two budgets end a run with "läuft zu lange": driving as before (16 per
+cell, at least 400), and thinking: 250·n⁴, at least 60,000, at most two
+million (5×5: 156,250). Measured: the flood fill above needs 14,000–20,000
+thinking actions on a random 5×5 (under a second in Edge).
 
 ## Levels
 
@@ -202,8 +422,10 @@ outside"), so it works for starts inside and outside.
   the border cell farthest (by steps) from the start. A star moves to the
   cell farthest from the start. Openings the pupil made elsewhere are closed.
 - **Leeren** removes all walls; start, star and openings stay.
-- All blocks are allowed, `wiederhole bis` and the variables too. No par and
-  no stars: a win shows the block count ("Geschafft! 7 Bausteine.").
+- All blocks are allowed, `wiederhole bis` and the variables too — and only
+  here the **lists, the Karten-Bausteine and Meine Bausteine** (with the
+  map conditions and the *Roboter* values). No par and no stars: a win
+  shows the block count ("Geschafft! 7 Bausteine.").
 - Hovering shows which line or cell a click would change. While a program runs
   or is being stepped, the maze is locked; **Zurück** unlocks it.
 - The mazes (with start and goal) are saved in `localStorage` with everything
@@ -234,6 +456,22 @@ task as `ratrocket-aufgabe<N>.json` — for handing in, or for later:
 before variables existed say `"version": 1` and have no `vars`; they still
 open.
 
+**Version 3** (lists, own blocks, the map) adds `lists` (names) and
+`funcs` (`[{ "name": "Flut", "body": [ … ] }]`), new block types, map
+conditions, and values in number fields:
+
+```json
+{ "version": 3, "level": 7, "lang": "de", "vars": ["I", "N"], "lists": ["QX"],
+  "funcs": [ { "name": "Nachbar", "body": [ { "t": "mapGet", "v": "N",
+             "x": { "v": "I" }, "y": { "p": "y" } } ] } ],
+  "prog": [ { "t": "repeatUntil", "cond": { "v": "I", "op": ">", "n": { "len": "QX" } },
+              "body": [ { "t": "call", "f": "Nachbar" } ] } ] }
+```
+
+**Speichern writes the lowest version that holds the program:** 2 when it
+uses none of the new things (so an older copy of the page still opens it),
+3 otherwise. Versions 1, 2 and 3 open.
+
 On task 7 the file also carries the maze, so a teacher sees what the program
 was built for:
 `"maze": { "n": 4, "walls": ["1,1,E"], "exits": ["3,3,N"], "goal": null, "start": { "x": 0, "y": 0, "d": "N" } }`.
@@ -243,14 +481,19 @@ from another task, the message says so ("Programm aus Aufgabe 5 geladen.").
 A task-7 file opened on task 7 brings its maze back too.
 
 Opening is strict, and a file is data only — it is read with `JSON.parse` and
-never run. `version` must be 1 or 2; every block must be a known type with
+never run. `version` must be 1, 2 or 3; every block must be a known type with
 exactly its fields; `wiederhole` counts are clamped to 1–9, the other numbers
 to −999–999; a condition must be one of the six sensor conditions or a
 comparison `{v, op, n}` with `op` one of `= > <`; at most 500 blocks, 12
 levels deep, 200 kB; unknown keys are dropped. Version 2 must list `vars`:
 valid, unique names (as above), at most 12; a block or comparison naming a
 variable that is not listed refuses the file. Version 1 knows only the seven
-old block types and no variables.
+old block types and no variables; version 2 no lists, own blocks, map
+blocks or values. Version 3: `lists` valid and unique (and never the name
+of a variable), at most 8; `funcs` with valid unique names, at most 8, and
+**no own block that uses itself** (directly or through others); every
+list, own block and value must be declared; a value is exactly one of
+`{v}`, `{len}`, `{p}` with `p` one of `x y d sx sy`.
 A maze must be 3–32 cells wide; walls inside, openings on the border; the
 start inside or on the ring just outside; the star inside and not on the
 start.
@@ -298,6 +541,12 @@ works. The robot must be in maze mode (DIP SW3).
 Variable blocks and comparisons send **nothing**: variables live in the
 browser (see *Variables*). `wiederhole bis` with a sensor condition sends
 `WALLS` before each round, like `wenn`.
+
+`merke Wände hier` sends `WALLS` too and writes the robot's answer into
+the map (F/L/R turned into north/east/south/west with the heading the page
+keeps). Lists, own blocks, map numbers and map conditions send nothing —
+the flood fill thinks in the browser and the robot only drives (`CELL`,
+`TURN`) and looks (`WALLS`). Nothing changed in the firmware.
 
 Switching it on tells the pupil where to put the robot: the task's start cell
 and heading ("… ins Startfeld unten links im Labyrinth, Blick nach oben
@@ -399,19 +648,48 @@ run (2026-11-11): **ALL PASS (18 checks)**.
   −999–999, and 21 broken files with variables are refused; the
   `localStorage` data holds the variables, and loading drops bad lists and
   brings back names a stored program uses;
-- the font — Fredoka must load from `web/fonts`, with no font CDN on the page.
+- the font — Fredoka must load from `web/fonts`, with no font CDN on the page;
+- Profi-Wörter — through the button, in German and English, on and off: the
+  keywords switch (as code), robot words, tips and tasks do not, the program
+  is unchanged, task 9 is still solved, the setting is stored; also on the
+  list, map and own blocks (`profi`, `profiNew`);
+- own blocks — Neuer Baustein through the page (suggestion, name rules,
+  task 7 only), a block used twice solves a maze and counts 1 + 4 + 2 = 7,
+  stepping marks the block inside and its use; recursion refused on the drop
+  (direct, through another, inside a loop) with the message, a hand-made
+  loop ends with it, used blocks cannot be deleted; version-3 files keep
+  them, 20 broken ones are refused; `localStorage` (`func…`);
+- lists — Neue Liste (one name space with variables), add / item / replace
+  / length / delete all from 1 and empty on every run, the picker and a
+  dropped pill set values, errors for items that are not there and the
+  1001st item, the watch panel rows, files and `localStorage` (`list…`,
+  `opUi`);
+- the map — merke Wände hier (both sides of a wall), the map conditions,
+  unknown = open, border closed, numbers, position values, an empty map each
+  run, errors for cells and directions, the numbers and remembered walls
+  drawn and cleared, the Karte box and its pills (`map…`);
+- **the flood fill fixture** — built from these blocks only (no sensor),
+  it must solve 5 random 5×5 mazes from (0,0) to the star with all 25
+  numbers drawn, and explore a trap 3×3 in 8 cells (shortest 4); with a
+  stand-in robot it must solve one sending only `CELL`, `TURN 90` and one
+  `WALLS` per cell, its map must equal the robot's answers, a wall only the
+  robot reports must go into the map, and a silent robot gives the message
+  (`flood`, `floodBot`);
+- the rail links Fernsteuerung, Lernen, Werkstatt in both languages (`links`).
 
 Run it after changing a level, the interpreter or the file format. It never
 writes to `localStorage`, so running it in a classroom browser does not touch
 the pupils' work. `?selftest=hook` only sets up the test hook
 (`window.RRApp`) for scripted screenshots and runs nothing.
 
-Last run (2026-11-11): **ALL PASS (52 checks).**
+Last run (2026-11-11): **ALL PASS (77 checks)** — the 52 before lists and
+own blocks, and 25 new ones.
 
-Headless:
+Headless (a fresh profile, so no stored work interferes):
 
 ```
-msedge --headless=new --virtual-time-budget=40000 --dump-dom \
+msedge --headless=new --disable-gpu --no-first-run --user-data-dir=<new folder> \
+  --virtual-time-budget=90000 --dump-dom \
   "file:///W:/FreelanceProjects/Micromouse/web/code.html?selftest=1"
 ```
 
@@ -439,8 +717,10 @@ The page title becomes `SELFTEST PASS` or `SELFTEST FAIL <ids>`.
 
 ## Not built yet
 
-- **Lists** and **own functions** (blocks made of blocks) — the next steps
-  after variables (curriculum module 7 and 8).
+- **Parameters** for own blocks (`Nachbar von x y`), and own blocks that
+  give a value back. v1 shares the program's variables instead.
+- A task of its own for the flood fill (with a par); today it is built in
+  task 7, where everything is allowed.
 - Programs stored **on** the robot, so it runs without a laptop. Needs the
   interpreter in the firmware (`PUSH`-style), then slots in flash.
 - A teacher view of who solved what.

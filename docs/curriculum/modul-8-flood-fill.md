@@ -4,9 +4,9 @@
 **Software:** Unplugged, Vergleich in Aufgabe 7 und die eingebaute Zahlenflut des Roboters
 (`GO`, `GOTO`) **verfügbar**; die Roboter-Demo läuft heute über die englische Testseite
 `web/maze_event.html`.
-**Geplant – Stand November 2026:** die Zahlenflut selbst bauen – mit Karten-Bausteinen oder
-Listen und eigenen Funktionen, für Ältere als Textprogramm. **Variablen** dafür sind schon
-**verfügbar** (Modul 7, Aufgabe 8 und 9).
+**Verfügbar** (seit November 2026): die Zahlenflut selbst bauen – mit Karten-Bausteinen, Listen,
+Variablen und eigenen Bausteinen in Aufgabe 7 (Ausbau P5–P7). **Geplant – Stand November 2026:**
+dieselbe Flut für Ältere als Textprogramm.
 
 Wie findet ein Roboter den **kürzesten** Weg – auch zum Stern in der Mitte, an dem die rechte
 Hand scheitert? Mit einer Idee, die Kinder ohne Computer ausführen können: Man gießt
@@ -168,48 +168,90 @@ in jedem Feld aus dem, was er bisher gesehen hat.
 
 ## Ausbau P5–P7 – Bau die Flut selbst
 
-**Geplant – Stand November 2026.** Die Kinder sollen die Zahlenflut selbst programmieren und
-denselben Weg erst in der Simulation, dann auf dem Roboter fahren. Dafür fehlen in RatRocket
-Code noch Bausteine (Variablen gibt es schon, Listen und eigene Funktionen noch nicht). Zwei
-Ausbaustufen sind denkbar (Namen sind Arbeitstitel):
+**Verfügbar (Aufgabe 7, seit November 2026).** Die Kinder programmieren die Zahlenflut selbst und
+fahren denselben Weg erst in der Simulation, dann auf dem Roboter (Labyrinth bis 5 × 5). Dafür hat
+Aufgabe 7 die **Karten-Bausteine** (Gruppe **Karte**: `merke Wände hier`, `lösche alle Zahlen`,
+`setze Zahl von Feld x y auf n`, `setze … auf Zahl von Feld x y`, die Bedingungen
+`vorne/rechts/links offen laut Karte` und `Feld x y nach r offen`, die Werte `mein x`, `mein y`,
+`meine Richtung`, `Stern x`, `Stern y`), dazu **Listen** und **eigene Bausteine**. Jede Zahl, die
+das Programm schreibt, erscheint blass im Feld des Labyrinths. Richtungen sind Zahlen: 1 Norden,
+2 Osten, 3 Süden, 4 Westen; „leer" ist −1; eine Wand, die der Roboter noch nicht gesehen hat, gilt
+als offen – wie bei `GO`.
 
-**Stufe 1 – Karten-Bausteine (ab etwa 11):** Die Software rechnet die Flut, die Kinder
-programmieren das Bergab-Fahren mit den bekannten `wenn`-Bausteinen.
-
-```
-[Entwurf – diese Bausteine gibt es noch nicht]
-rechne die Flut zum Stern
-wiederhole, bis du am Stern bist
-    wenn Zahl vorne kleiner als Zahl hier
-        fahre 1 Feld
-    sonst
-        wenn Zahl rechts kleiner als Zahl hier
-            drehe nach rechts
-        sonst
-            drehe nach links
-```
-
-**Stufe 2 – Variablen (verfügbar), Listen und eigene Funktionen (geplant) (ab etwa 13):** Die
-Kinder bauen die Flut selbst – mit einer Warteschlange (eine Liste, an die man hinten anfügt und
-vorne wegnimmt):
+**Stufe 1 (ab etwa 11):** Die Lehrkraft baut die eigenen Bausteine **Flut** und **Nachbar** einmal
+vor (Stufe 2), speichert die Datei und gibt sie aus (**Öffnen** in Aufgabe 7; die acht
+`füge`-Bausteine für die Listen DX = 0, 1, 0, −1 und DY = 1, 0, −1, 0 sind mit drin). Die Kinder
+bauen das Bergab-Fahren:
 
 ```
-[Entwurf – Listen, Feld-Zahlen und „für jede" gibt es noch nicht; setze/ändere schon]
-setze Zahl von jedem Feld auf leer
-setze Zahl von Ziel auf 0
-füge Ziel zur Liste Warteschlange hinzu
-wiederhole, solange Warteschlange nicht leer ist
-    nimm das erste Feld F aus der Warteschlange
-    für jede Richtung R
-        wenn bei F in Richtung R keine Wand ist und der Nachbar N leer ist
-            setze Zahl von N auf Zahl von F + 1
-            füge N zur Warteschlange hinzu
+wiederhole bis H < 0
+    merke Wände hier
+    Flut
+    setze FX auf mein x
+    setze FY auf mein y
+    setze H auf Zahl von Feld FX FY
+    setze R auf 1
+    wiederhole 4 mal                       ← Z: die Richtung, in der es am tiefsten bergab geht
+        wenn Feld FX FY nach R offen
+            Nachbar
+            wenn N < H
+                setze H auf N
+                setze Z auf R
+        ändere R um 1
+    wiederhole bis Z = meine Richtung
+        drehe nach rechts
+    fahre 1 Feld
 ```
+
+Am Stern ist der Lauf gewonnen und zu Ende; `H < 0` hält nur an, wenn es keinen Weg gibt.
+
+**Stufe 2 (ab etwa 13):** Die Kinder bauen **Flut** selbst – mit einer Warteschlange: zwei Listen
+QX, QY für die Felder und eine Variable I, die zeigt, welches Feld als Nächstes drankommt (vorne
+wegnehmen heißt: I um 1 weiterzählen):
+
+```
+definiere Flut
+    lösche alle Zahlen
+    setze Zahl von Feld Stern x Stern y auf 0
+    lösche alles aus QX
+    lösche alles aus QY
+    füge Stern x zu QX hinzu
+    füge Stern y zu QY hinzu
+    setze I auf 1
+    wiederhole bis I > Länge von QX
+        setze FX auf Element I von QX
+        setze FY auf Element I von QY
+        setze D auf Zahl von Feld FX FY
+        ändere D um 1
+        setze R auf 1
+        wiederhole 4 mal                       ← für jede Richtung
+            wenn Feld FX FY nach R offen
+                Nachbar                        ← NX, NY und seine Zahl N
+                wenn N = −1                    ← noch leer
+                    setze Zahl von Feld NX NY auf D
+                    füge NX zu QX hinzu
+                    füge NY zu QY hinzu
+            ändere R um 1
+        ändere I um 1
+
+definiere Nachbar
+    setze NX auf Element R von DX
+    ändere NX um FX
+    setze NY auf Element R von DY
+    ändere NY um FY
+    setze N auf Zahl von Feld NX NY
+```
+
+Das ganze Programm (54 Bausteine) steht in `docs/code-editor.md`, Abschnitt *Karten-Bausteine*.
+Der Selbsttest der Software prüft, dass es zufällige 5 × 5-Labyrinthe vom Feld unten links bis
+zum Stern löst – auch mit einem nachgestellten echten Roboter, der nur `CELL`, `TURN` und `WALLS`
+bekommt. Mit **Tempo** ganz links sieht man, wie die Zahlen das Labyrinth füllen.
 
 Stundenskizze für P5–P7: P5 die Warteschlange unplugged (Kinder stehen als Felder in einer
-Schlange an), P6 Stufe 1 oder 2 in der Simulation, P7 dasselbe Programm auf dem Roboter und
-das Wettrennen aus Stunde 15 – diesmal mit einem Programm, das *jedes* Labyrinth kann.
-Bis dahin: Ältere arbeiten mit dem C-Code des Roboters (Modul 10).
+Schlange an), P6 Stufe 1 oder 2 in der Simulation (**Zufall**, 5 × 5), P7 dasselbe Programm auf
+dem Roboter und das Wettrennen aus Stunde 15 – diesmal mit einem Programm, das *jedes*
+Labyrinth kann. Die *Optimisten-Falle* (Stunde 15) lässt sich jetzt mit dem eigenen Programm
+prüfen. Für Ältere zusätzlich: der C-Code des Roboters (Modul 10).
 
 ## Differenzierung
 

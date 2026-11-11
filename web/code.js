@@ -19,6 +19,13 @@
  * kept with the program. Their values live only here in the browser and
  * start at 0 on every run; the robot never hears about them. A condition is
  * either a sensor condition ('frontFree' ...) or a comparison {v, op, n}.
+ *
+ * Task 7 also has lists (items from 1), own blocks ("Meine Bausteine": a
+ * name for a list of blocks, defined under the program, never using
+ * itself) and the robot's map ("Karte": a number per cell and the walls it
+ * has remembered), so a flood fill can be built from blocks. A number
+ * field holds a number or a value read when the block runs: {v}, {len},
+ * {p}. Profi-Woerter only changes the labels. See docs/code-editor.md.
  */
 (function () {
   'use strict';
@@ -31,6 +38,15 @@
   const VAR_MAX = 12;                   /* variables per program */
   /* letters (with umlauts and sharp s) and digits, a letter first, 1..12 */
   const VAR_NAME = /^[A-Za-z\u00c4\u00d6\u00dc\u00e4\u00f6\u00fc\u00df][A-Za-z0-9\u00c4\u00d6\u00dc\u00e4\u00f6\u00fc\u00df]{0,11}$/;
+  /* own blocks: letters, digits and single spaces, a letter first, 1..16 */
+  const FUNC_MAX = 8;
+  /* lists: names like variables (one name space with them), at most 8 per
+     program, at most 1000 items each */
+  const LIST_MAX = 8, LIST_ITEMS = 1000;
+  /* the thinking budget: 250 per cell to the 4th, at least 60000, at most
+     two million (see maxThinks) */
+  const THINK_MIN = 60000, THINK_PER = 250, THINK_CAP = 2000000;
+  const FUNC_NAME = /^[A-Za-z\u00c4\u00d6\u00dc\u00e4\u00f6\u00fc\u00df](?:[A-Za-z0-9\u00c4\u00d6\u00dc\u00e4\u00f6\u00fc\u00df]| (?! )){0,15}$/;
 
   /* ---------------- state ---------------- */
   let lang = 'de';
@@ -51,6 +67,16 @@
   let varVals = new Map();        /* name -> value during and after a run */
   let lastChanged = null;         /* the variable that changed last (watch panel) */
   let shownLog = [];              /* what "zeige" showed in this run: [name, value] */
+  let profi = false;              /* Profi-Woerter: real keywords on the blocks */
+  let funcs = [];                 /* the open program's own blocks: [{name, body}] */
+  let funcsBy = {};               /* per level id, saved like progs */
+  let lists = [];                 /* the open program's list names */
+  let listsBy = {};               /* per level id, saved like progs */
+  let listVals = new Map();       /* name -> array of numbers during and after a run */
+  let lastList = null;            /* {l, i}: the list item that changed last (watch panel) */
+
+  /* a number for people: a real minus sign */
+  const fmtNum = (n) => String(n).replace('-', '\u2212');
 
   const t = (key, vars) => {
     let s = (TEXT[lang] && TEXT[lang][key]) || TEXT.de[key] || key;
@@ -250,29 +276,93 @@
       case 'setVar':    yield { act: 'var', op: 'set', b }; break;
       case 'changeVar': yield { act: 'var', op: 'change', b }; break;
       case 'showVar':   yield { act: 'show', b }; break;
+      case 'listAdd': case 'listSet': case 'listGet': case 'listClear':
+        yield { act: 'list', b };
+        break;
+      case 'mapWalls': yield { act: 'walls', b }; break;      /* asks the sensors */
+      case 'mapClear': case 'mapSet': case 'mapGet':
+        yield { act: 'map', b };
+        break;
+      case 'call': {
+        /* an own block: one action to step in, then its body. Drops and
+           files never let a block use itself; the depth guard only catches
+           a hand-made loop. */
+        const f = funcs.find((x) => x.name === b.f);
+        if (!f) break;
+        if (ctx.stack.length >= FUNC_MAX) throw runError('funcSelf');
+        yield { act: 'tick', b };
+        ctx.stack.push(b);
+        yield* runList(f.body, ctx);
+        ctx.stack.pop();
+        break;
+      }
       default: break;
     }
   }
 
-  const isCompare = (c) => !!c && typeof c === 'object';
-  /* A sensor condition asks the robot (WALLS); a comparison only looks at a
-     variable here in the browser - nothing is sent. */
-  const askFor = (b) => (isCompare(b.cond) ? { act: 'tick', b } : { act: 'sense', b });
+  /* A mistake the program makes while it runs (a list index that does not
+     exist ...): the run ends with this message instead of a crash. */
+  const runError = (key, vars) => Object.assign(new Error(key), { run: true, key, vars });
+
+  /* Conditions: a sensor string, a comparison {v, op, n}, a map string
+     ('mapFront' ...: that side of the robot's cell open on its map) or a map
+     question about any cell {x, y, dir}. */
+  const MAP_CONDS = ['mapFront', 'mapRight', 'mapLeft'];
+  const isCompare = (c) => !!c && typeof c === 'object' && 'op' in c;
+  const isCellCond = (c) => !!c && typeof c === 'object' && 'dir' in c;
+  const isSensor = (c) => typeof c === 'string' && CONDITIONS.includes(c);
+  /* A sensor condition asks the robot (WALLS); everything else only looks
+     at the browser's own memory - nothing is sent. */
+  const askFor = (b) => (isSensor(b.cond) ? { act: 'sense', b } : { act: 'tick', b });
   const varVal = (name) => varVals.get(name) || 0;
 
+  /* ---------------- operands ----------------
+   * A number field holds a number, or a value read when the block runs:
+   * {v} a variable, {len} how many items a list has, {p} where the robot
+   * is: x, y, d (its direction 1 north, 2 east, 3 south, 4 west) - and sx,
+   * sy where the star is (-1 without a star). */
+  const listOf = (name) => listVals.get(name) || [];
+  const POS = ['x', 'y', 'd', 'sx', 'sy'];
+  const DIR_NUM = { N: 1, E: 2, S: 3, W: 4 };
+  const NUM_DIR = [null, 'N', 'E', 'S', 'W'];
+  function posVal(p) {
+    const b = world.bot, g = isStar(world.goal) ? world.goal : null;
+    return p === 'x' ? b.x : p === 'y' ? b.y : p === 'd' ? DIR_NUM[b.d]
+         : p === 'sx' ? (g ? g.x : -1) : p === 'sy' ? (g ? g.y : -1) : 0;
+  }
+  function val(o) {
+    if (typeof o === 'number') return o;
+    if (!o || typeof o !== 'object') return 0;
+    if ('v' in o) return varVal(o.v);
+    if ('len' in o) return listOf(o.len).length;
+    if ('p' in o) return posVal(o.p);
+    return 0;
+  }
+
   function compare(c) {
-    const a = varVal(c.v);
-    return c.op === '>' ? a > c.n : c.op === '<' ? a < c.n : a === c.n;
+    const a = varVal(c.v), n = val(c.n);
+    return c.op === '>' ? a > n : c.op === '<' ? a < n : a === n;
   }
 
   function makeCtx() {
     return {
       walls: null,                            /* robot mode: last WALLS reading */
+      stack: [],                              /* the own blocks being run, outermost first */
       isOut() {                 /* out = outside the grid, after having been inside */
         return world.entered && !world.inside(world.bot.x, world.bot.y);
       },
       test(cond) {
         if (isCompare(cond)) return compare(cond);
+        if (isCellCond(cond)) {
+          const x = val(cond.x), y = val(cond.y);
+          cellIndex(x, y);                     /* a cell that is not there: a message */
+          return mapOpen(x, y, dirOf(val(cond.dir)));
+        }
+        if (MAP_CONDS.includes(cond)) {
+          const b = world.bot;
+          const side = cond === 'mapFront' ? b.d : cond === 'mapRight' ? RIGHT_OF[b.d] : LEFT_OF[b.d];
+          return world.inside(b.x, b.y) && mapOpen(b.x, b.y, side);
+        }
         const side = cond.startsWith('front') ? world.bot.d
                    : cond.startsWith('right') ? RIGHT_OF[world.bot.d]
                    : LEFT_OF[world.bot.d];
@@ -287,6 +377,98 @@
         return cond.endsWith('Free') ? free : !free;
       },
     };
+  }
+
+  /* One list block. Items are numbered from 1, like in Scratch; an index
+     that is not there ends the run with a message that says how many
+     items the list has. */
+  function doList(b) {
+    const arr = listVals.get(b.l) || [];
+    listVals.set(b.l, arr);
+    const at = (i) => {
+      if (!Number.isInteger(i) || i < 1 || i > arr.length) {
+        throw runError(!arr.length ? 'errEmpty' : arr.length === 1 ? 'errIndexOne' : 'errIndex', { l: b.l, i: fmtNum(i), k: arr.length });
+      }
+      return i - 1;
+    };
+    if (b.t === 'listAdd') {
+      if (arr.length >= LIST_ITEMS) throw runError('errFull', { l: b.l });
+      arr.push(val(b.n));
+      lastList = { l: b.l, i: arr.length - 1 };
+    } else if (b.t === 'listSet') {
+      const k = at(val(b.i));
+      arr[k] = val(b.n);
+      lastList = { l: b.l, i: k };
+    } else if (b.t === 'listGet') {
+      const k = at(val(b.i));
+      setVarValue(b.v, arr[k]);
+    } else {
+      arr.length = 0;
+      lastList = { l: b.l, i: -1 };
+    }
+    if (b.t !== 'listGet') { lastChanged = null; paint('watch'); }
+  }
+
+  /* ---------------- the robot's map ("Karte") ----------------
+   * The robot's own memory of the maze, empty at the start of every run:
+   * a number per cell (-1 = empty; drawn faintly in the maze once the
+   * program writes it) and the walls it has remembered. "merke Waende
+   * hier" writes down what the three sensors see - front, left and right of
+   * the cell it stands on: the drawing in the simulation, the WALLS answer
+   * on the real robot. A wall it does not know counts as open (like the
+   * robot's own flood fill); the border is always closed - the map ends
+   * there. Cell (0,0) is bottom left. */
+  let mapNums = [];                    /* y * n + x -> number, -1 = empty */
+  let mapKnown = new Map();            /* "x,y,D" -> true wall / false open */
+  let lastCell = -1;                   /* the number written last (drawn gold) */
+
+  function resetMap() {
+    const n = world ? world.n : 0;
+    mapNums = new Array(n * n).fill(-1);
+    mapKnown = new Map();
+    lastCell = -1;
+  }
+
+  /* a cell's index, or a message if there is no such cell */
+  function cellIndex(x, y) {
+    const n = world.n;
+    if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= n || y >= n) {
+      throw runError('errCell', { x: fmtNum(x), y: fmtNum(y), m: n - 1 });
+    }
+    return y * n + x;
+  }
+  /* 1..4 -> N E S W, or a message */
+  function dirOf(r) {
+    if (!NUM_DIR[r]) throw runError('errDir', { r: fmtNum(r) });
+    return NUM_DIR[r];
+  }
+
+  /* one side of a cell, written down for both cells it divides */
+  function remember(x, y, d, wall) {
+    mapKnown.set(x + ',' + y + ',' + d, wall);
+    const nx = x + DX[d], ny = y + DY[d];
+    if (world.inside(nx, ny)) mapKnown.set(nx + ',' + ny + ',' + OPP[d], wall);
+  }
+  /* open on the map: inside the grid, and no remembered wall */
+  function mapOpen(x, y, d) {
+    if (!world.inside(x + DX[d], y + DY[d])) return false;
+    return mapKnown.get(x + ',' + y + ',' + d) !== true;
+  }
+
+  function doMap(b) {
+    if (b.t === 'mapClear') {
+      mapNums.fill(-1);
+      lastCell = -1;
+    } else if (b.t === 'mapSet') {
+      const k = cellIndex(val(b.x), val(b.y));
+      mapNums[k] = val(b.n);
+      lastCell = k;
+    } else {
+      const k = cellIndex(val(b.x), val(b.y));
+      setVarValue(b.v, mapNums[k] === undefined ? -1 : mapNums[k]);
+      return;
+    }
+    paint('map');
   }
 
   /* ---------------- robot link (Web Serial) ---------------- */
@@ -363,35 +545,104 @@
     return world && world.n > 5 ? Math.round(base * Math.min(1, geom().cs / 57)) : base;
   };
 
+  /* Thinking and driving. Driving actions (fahre, drehe, a sensor question)
+   * move or ask the robot. Thinking actions (variables, lists, comparisons,
+   * stepping into an own block) only touch the browser's memory.
+   * A short row of thinking is shown block by block, as always. A program
+   * that thinks a lot (a flood fill: hundreds of blocks per cell) gets the
+   * "Denk-Turbo" once a row of more than THINK_STREAK thinking blocks
+   * happens: from then on thinking is quiet - the watch panel and the map
+   * are painted a few times a second, not after every block - and as fast
+   * as the Tempo slider allows (slowest: 25 ms a block, so the flood can be
+   * watched; from the middle on at once). Driving never changes. */
+  const THINK_ACTS = new Set(['tick', 'var', 'show', 'list', 'map']);
+  const THINK_STREAK = 12;
+  const QUICK_MS = [25, 6, 0, 0, 0];
+  let quiet = false;                     /* this action paints later */
+  const dirty = { watch: false, map: false };
+  let pendingBubble = null;
+
+  /* the watch panel (and later the map) now, or at the next catch-up */
+  function paint(what) {
+    if (quiet) { dirty[what] = true; return; }
+    if (what === 'watch') renderWatch(); else drawMapLayer();
+  }
+  function flushPaint() {
+    if (dirty.watch) { dirty.watch = false; renderWatch(); }
+    if (dirty.map) { dirty.map = false; drawMapLayer(); }
+    if (pendingBubble != null) { const s = pendingBubble; pendingBubble = null; showBubble(s); }
+  }
+  /* after quiet thinking: paint, and mark the block the program is at */
+  function catchUp() {
+    flushPaint();
+    if (session && session.hl) highlight(session.hl, session.ctx.stack);
+  }
+
   /* One action. Returns true, false (a wall, or the robot refused), or
    * 'silent': the real robot did not answer in time. Every move and turn
    * that happened is counted for the tournament (world.moves, world.turns). */
+  /* the robot's answer to WALLS: F=mm L=mm R=mm, "(wall)" after a side it calls a wall */
+  const WALLS_RE = /^WALLS: F=(\d+)(\(wall\))? L=(\d+)(\(wall\))? R=(\d+)(\(wall\))?/;
   let timeScale = 1;                       /* the self-test shortens the waits */
   async function perform(a, ctx) {
     const real = $('realChk').checked && port && !tooBigForBot();
+    const pause = (k) => (real || quiet ? null : sleep(stepMs() * k));
 
     if (a.act === 'tick') { return true; }
 
-    /* variables live here in the browser: nothing goes to the robot */
+    /* variables and lists live here in the browser: nothing goes to the robot */
     if (a.act === 'var') {
       const b = a.b;
-      setVarValue(b.v, a.op === 'set' ? b.n : varVal(b.v) + b.n);
-      if (!real) await sleep(stepMs() * 0.45);
+      setVarValue(b.v, a.op === 'set' ? val(b.n) : varVal(b.v) + val(b.n));
+      await pause(0.45);
       return true;
     }
     if (a.act === 'show') {
       const v = varVal(a.b.v);
       shownLog.push([a.b.v, v]);
+      if (quiet) { dirty.watch = true; pendingBubble = a.b.v + ': ' + v; return true; }
       renderWatch();
       showBubble(a.b.v + ': ' + v);
-      if (!real) await sleep(stepMs() * 0.6);
+      await pause(0.6);
+      return true;
+    }
+    if (a.act === 'list') {
+      doList(a.b);
+      await pause(0.45);
+      return true;
+    }
+    if (a.act === 'map') {
+      doMap(a.b);
+      await pause(0.45);
+      return true;
+    }
+
+    /* "merke Waende hier": front, left and right of the robot's cell go
+       into its map - from the drawing, or from the real robot's WALLS */
+    if (a.act === 'walls') {
+      const b = world.bot;
+      if (!world.inside(b.x, b.y)) return true;          /* outside the maze: no cell to note */
+      let seen;
+      if (real) {
+        send('WALLS');
+        const m = await expect(WALLS_RE, 4000 * timeScale);
+        if (!m) return 'silent';
+        seen = { front: !!m[2], left: !!m[4], right: !!m[6] };
+      } else {
+        seen = { front: !openSide(world, b.d), left: !openSide(world, LEFT_OF[b.d]), right: !openSide(world, RIGHT_OF[b.d]) };
+      }
+      remember(b.x, b.y, b.d, seen.front);
+      remember(b.x, b.y, LEFT_OF[b.d], seen.left);
+      remember(b.x, b.y, RIGHT_OF[b.d], seen.right);
+      paint('map');
+      if (!real) await sleep(stepMs() * 0.45);
       return true;
     }
 
     if (a.act === 'sense') {
       if (real) {
         send('WALLS');
-        const m = await expect(/^WALLS: F=(\d+)(\(wall\))? L=(\d+)(\(wall\))? R=(\d+)(\(wall\))?/, 4000 * timeScale);
+        const m = await expect(WALLS_RE, 4000 * timeScale);
         if (!m) return 'silent';
         ctx.walls = { front: !!m[2], left: !!m[4], right: !!m[6] };
       } else {
@@ -447,22 +698,49 @@
 
   /* ---------------- running ---------------- */
   /* Every run - and every maze of a level with variants - starts with all
-     variables at 0. */
+     variables at 0 and all lists empty. */
   function startSession() {
     const ctx = makeCtx();
     resetVars();
-    session = { gen: runList(prog, ctx), ctx, actions: 0, alive: true };
+    session = { gen: runList(prog, ctx), ctx, actions: 0, thinks: 0, streak: 0, turbo: false,
+                burst: 0, yieldAt: 0, hl: null, alive: true };
     return session;
   }
 
   async function advance() {
     if (!session || !session.alive) return false;
-    const { value, done: d } = session.gen.next();
+    let step, ok;
+    try { step = session.gen.next(); }
+    catch (e) { if (e && e.run) { finish(false, e.key, e.vars); return false; } throw e; }
+    const { value, done: d } = step;
     if (d) { programEnded(); return false; }
-    if (++session.actions > maxActions()) { finish(false, 'failedLong'); return false; }
-    highlight(value.b);
-    const ok = await perform(value, session.ctx);
-    if (!session.alive) return false;
+    /* two runaway guards: one for driving, a far bigger one for thinking */
+    const think = THINK_ACTS.has(value.act);
+    if (think) {
+      if (++session.thinks > maxThinks()) { finish(false, 'failedLong'); return false; }
+      if (++session.streak > THINK_STREAK) session.turbo = true;
+    } else {
+      if (++session.actions > maxActions()) { finish(false, 'failedLong'); return false; }
+      session.streak = 0;
+    }
+    const s = session;
+    quiet = think && s.turbo;
+    s.hl = value.b;
+    if (!quiet) { flushPaint(); highlight(value.b, s.ctx.stack); }
+    try { ok = await perform(value, s.ctx); }
+    catch (e) { quiet = false; if (e && e.run && session === s && s.alive) { finish(false, e.key, e.vars); return false; } throw e; }
+    if (quiet) {
+      quiet = false;
+      const ms = fast ? 0 : QUICK_MS[($('speed').value | 0) - 1] || 0;
+      if (ms) { catchUp(); await sleep(ms); }
+      else if (++s.burst >= 20000 || performance.now() - s.yieldAt > 40) {
+        s.burst = 0;
+        catchUp();
+        await sleep(0);                  /* let the page breathe: Stopp, the panels */
+        s.yieldAt = performance.now();
+      }
+    }
+    if (!session || !session.alive) return false;
     if (ok === 'silent') { finish(false, 'botSilent'); return false; }
     if (!ok) { finish(false, 'failedWall'); return false; }
     if (!level().endOnStar && reachedGoal()) { finish(true); return false; }
@@ -495,8 +773,12 @@
   /* Runaway guard, scaled with the maze: a wall follower needs about 8 steps
    * per cell (measured: 544 at most on random 8x8), so 16 per cell never
    * stops a correct program, while a real endless loop still ends. 3x3
-   * tasks keep the old 400. */
+   * tasks keep the old 400. Thinking has its own, far bigger budget: a
+   * flood fill thinks hundreds of blocks per cell driven (measured in the
+   * self-test), and a thinking loop that never ends still stops within a
+   * few seconds. */
   const maxActions = () => Math.max(MAX_ACTIONS, 16 * world.n * world.n + 50);
+  const maxThinks = () => Math.min(THINK_CAP, Math.max(THINK_MIN, THINK_PER * Math.pow(world.n, 4)));
 
   /* Reasons not to start at all (a message instead of a run). */
   function cannotRun() {
@@ -525,6 +807,7 @@
     if (!session) { resetRun(); startSession(); }
     setRunning(true);
     await advance();
+    catchUp();                       /* a step always shows everything */
     setRunning(false);
   }
 
@@ -564,18 +847,22 @@
 
   let lastResult = null;
   let lastStats = null;
+  let lastThinks = 0;                       /* thinking actions of the last run (self-test) */
 
   /* What the tournament counts (docs/curriculum/anhang-turnier.md): blocks,
    * cells driven, turns (all three turn blocks alike), and the drive-time
    * points: 10 per cell, 8 per turn. */
   function runStats() {
     const moves = world.moves, turns = world.turns;
-    return { blocks: countBlocks(prog), moves, turns, points: 10 * moves + 8 * turns };
+    return { blocks: countAll(), moves, turns, points: 10 * moves + 8 * turns };
   }
 
   function finish(win, failKey, failVars) {
     lastResult = { win: !!win, reason: failKey || (win ? 'goal' : 'failedEnd') };
     lastStats = runStats();
+    quiet = false;
+    flushPaint();                    /* what the quiet thinking left unpainted */
+    lastThinks = session ? session.thinks : 0;
     if (session) session.alive = false;
     session = null;
     highlight(null);
@@ -598,11 +885,11 @@
       return;
     }
     if (win && lv.sandbox) {                          /* own maze: no stars, just the count */
-      const used = countBlocks(prog);
+      const used = countAll();
       say(t('solvedBlocks', { n: used, b: blocksWord(used) }), 'win', null, lastStats);
       celebrate();
     } else if (win) {
-      const stars = starsFor(countBlocks(prog), lv.par);
+      const stars = starsFor(countAll(), lv.par);
       done[lv.id] = Math.max(done[lv.id] || 0, stars);
       save();
       renderLevels();
@@ -631,6 +918,17 @@
       if (b.body) n += countBlocks(b.body);
       if (b.alt) n += countBlocks(b.alt);
     }
+    return n;
+  }
+
+  /* What the program costs, for stars and counters: every block once where
+     it stands. An own block counts 1 for its "definiere" head plus the
+     blocks inside it - once, however often it is used - and every use
+     counts 1. So an own block never beats a loop: a body of b blocks used k
+     times costs 1 + b + k, written out k * b. */
+  function countAll() {
+    let n = countBlocks(prog);
+    for (const f of funcs) n += 1 + countBlocks(f.body);
     return n;
   }
 
@@ -719,6 +1017,7 @@
     }
     if (dOpen) svg.append(el('path', { d: dOpen, class: 'wall-open' }));
     if (dWall) svg.append(el('path', { d: dWall, class: 'wall' }));
+    svg.append(el('g', { id: 'mapKnown', class: 'map-known' }));  /* the walls the robot's map remembers */
     if (n <= 12) {
       for (let x = 0; x <= n; x++) for (let y = 0; y <= n; y++) {
         svg.append(el('circle', { cx: pad + x * cs, cy: pad + y * cs, r: 2.6, class: 'pad-dot' }));
@@ -728,6 +1027,8 @@
     svg.append(el('g', { id: 'editHl' }));         /* own maze: what a click would change */
     svg.append(el('polyline', { id: 'trailLine', points: '', class: 'trail' }));
     updateTrail(svg);
+    svg.append(el('g', { id: 'mapNums', class: 'map-nums' }));   /* ... and its numbers, over the trail */
+    drawMapLayer();
 
     const g = el('g', { id: 'botGroup' });
     const hop = el('g', { class: 'bot-hop' });      /* the win moment animates this */
@@ -739,6 +1040,39 @@
     g.append(hop);
     svg.append(g);
     drawBot();
+  }
+
+  /* The robot's map in the maze: every number the program has written,
+     faint in its cell (the one written last in gold), and every wall it
+     has remembered as a thin gold line on that wall. Numbers only while
+     cells are big enough to read them. */
+  function drawMapLayer() {
+    const nums = $('mapNums'), known = $('mapKnown');
+    if (!nums || !known || !world) return;
+    nums.textContent = '';
+    known.textContent = '';
+    const { n, cs } = geom();
+    if (cs >= 14) {
+      const fs = Math.max(9, Math.min(26, cs * 0.36));
+      for (let k = 0; k < mapNums.length && k < n * n; k++) {
+        if (mapNums[k] === -1 || mapNums[k] === undefined) continue;
+        const [cx, cy] = centre(k % n, Math.floor(k / n));
+        const tx = el('text', { x: cx.toFixed(1), y: cy.toFixed(1), 'font-size': fs.toFixed(1),
+                                class: 'map-num' + (k === lastCell ? ' is-new' : '') });
+        tx.textContent = fmtNum(mapNums[k]);
+        nums.append(tx);
+      }
+    }
+    let d = '';
+    for (const [key, wall] of mapKnown) {
+      if (!wall) continue;
+      const [x, y, side] = key.split(',');
+      const nx = +x + DX[side], ny = +y + DY[side];
+      if ((side === 'S' || side === 'W') && world.inside(nx, ny)) continue;   /* each wall once */
+      const s = edgeSeg(+x, +y, side).map((v) => +v.toFixed(1));
+      d += 'M' + s[0] + ' ' + s[1] + 'L' + s[2] + ' ' + s[3];
+    }
+    if (d) known.append(el('path', { d, class: 'map-wall' }));
   }
 
   function updateTrail() {
@@ -1151,43 +1485,166 @@
     if (current && !names.includes(current)) names.push(current);
     return names.map((v) => ({ value: v, text: v }));
   }
+  function listOptions(current) {
+    const names = lists.slice();
+    if (current && !names.includes(current)) names.push(current);
+    return names.map((v) => ({ value: v, text: v }));
+  }
+
+  /* ---------------- number fields and values ----------------
+   * A number field (setze, aendere, the list blocks, a comparison) holds a
+   * number - typed, or stepped with - and + - or a value that is read when
+   * the block runs: a variable, or how many items a list has. The little
+   * picker next to the number chooses one; a value pill from the box can
+   * also be dropped on the field. Stored as a number, {v} or {len}. */
+  const opKey = (o) => (typeof o === 'number' ? '#' : 'v' in o ? 'v:' + o.v : 'len' in o ? 'len:' + o.len : 'p:' + o.p);
+  function opFromKey(k) {
+    if (k === '#') return 0;
+    const i = k.indexOf(':'), kind = k.slice(0, i), name = k.slice(i + 1);
+    return kind === 'v' ? { v: name } : kind === 'len' ? { len: name } : { p: name };
+  }
+  /* words in the chosen language; Profi-Woerter has its own for some */
+  const wordsOf = (key, v) => (profi && TEXT[lang] && TEXT[lang]['p_' + key] ? t('p_' + key, v) : t(key, v));
+  function opText(o) {
+    if (typeof o === 'number') return fmtNum(o);
+    if ('v' in o) return o.v;
+    if ('len' in o) return wordsOf('o_len', { l: o.len });
+    return wordsOf('o_' + o.p);
+  }
+
+  /* A picker as wide as what it shows, not as its longest choice: the text
+     measured in the block font, plus padding and the arrow. */
+  let measureCtx = null;
+  function fitSelect(sel) {
+    const o = sel.selectedOptions[0];
+    if (!o) return;
+    let w = 0;
+    try {
+      measureCtx = measureCtx || document.createElement('canvas').getContext('2d');
+      measureCtx.font = '500 15px Fredoka, "Trebuchet MS", system-ui, sans-serif';
+      w = measureCtx.measureText(o.textContent).width;
+    } catch (e) { w = 0; }
+    sel.style.width = w ? Math.ceil(w + 40) + 'px' : 'calc(' + Math.max(2, o.textContent.length) + 'ch + 40px)';
+  }
+
+  /* what the picker offers: a number, the variables, the list lengths */
+  function opChoices(cur) {
+    const groups = [{ group: t('opNumber'), options: [{ value: '#', text: t('opNumber') }] }];
+    const vs = vars.slice();
+    if (cur && 'v' in cur && !vs.includes(cur.v)) vs.push(cur.v);
+    if (vs.length) groups.push({ group: t('condVars'), options: vs.map((v) => ({ value: 'v:' + v, text: v })) });
+    const ls = lists.slice();
+    if (cur && 'len' in cur && !ls.includes(cur.len)) ls.push(cur.len);
+    if (ls.length) groups.push({ group: t('cat_list'), options: ls.map((l) => ({ value: 'len:' + l, text: opText({ len: l }) })) });
+    if (hasMap() || (cur && 'p' in cur)) groups.push({ group: t('opRobot'), options: POS.map((p) => ({ value: 'p:' + p, text: opText({ p }) })) });
+    return groups;
+  }
+  /* the map blocks (and the robot's position as a value) are in this task's box */
+  const hasMap = () => level().allow.includes('mapWalls');
+
+  /* one number field; slot = {p: block path, k: key, c: 1 if in the
+     condition} - where a dropped value pill goes */
+  function opField(host, key, live, slot) {
+    const o = host[key];
+    let node;
+    if (typeof o === 'number') {
+      node = numField(() => host[key], (v) => { host[key] = v; }, live);
+      if (live && (vars.length || lists.length || hasMap())) {
+        const pick = makeSelect('op-src', opChoices(null), '#', (val) => { host[key] = opFromKey(val); renderProgram(); });
+        pick.title = t('opPick');
+        pick.setAttribute('aria-label', t('opPick'));
+        node.append(pick);
+      }
+    } else if (!live) {
+      node = document.createElement('span');
+      node.className = 'cond cond-pill op-pill';
+      node.textContent = opText(o);
+    } else {
+      node = makeSelect('cond var-pick op-val', opChoices(o), opKey(o), (val) => { host[key] = opFromKey(val); renderProgram(); });
+      fitSelect(node);
+    }
+    if (live && slot) node.dataset.slot = JSON.stringify(slot);
+    return node;
+  }
 
   /* The condition: one picker for the six sensor conditions and the
      variables; a variable adds the comparison (= > <) and its number. */
-  function condNodes(b, live) {
+  function condNodes(b, live, path) {
     const c = b.cond;
-    if (!live && isCompare(c)) {           /* palette and drag ghost: one compact pill */
+    const slot = (k) => path && { p: path, k, c: 1 };
+    if (!live && (isCompare(c) || isCellCond(c))) {   /* palette and drag ghost: one compact pill */
       const pill = document.createElement('span');
       pill.className = 'cond cond-pill';
-      pill.textContent = c.v + ' ' + c.op + ' ' + String(c.n).replace('-', '\u2212');
+      pill.textContent = isCompare(c) ? c.v + ' ' + c.op + ' ' + opText(c.n)
+        : t('c_mapCell') + ' ' + t('c_mapCellT').replace('{x}', opText(c.x)).replace('{y}', opText(c.y)).replace('{r}', opText(c.dir));
       return [pill];
     }
-    const cur = isCompare(c) ? '#' + c.v : c;
+    const cur = isCompare(c) ? '#' + c.v : isCellCond(c) ? '@cell' : c;
     const items = [{ group: t('condSensors'), options: CONDITIONS.map((k) => ({ value: k, text: t('c_' + k) })) }];
+    if (hasMap() || MAP_CONDS.includes(c) || isCellCond(c)) {
+      items.push({ group: t('cat_map'), options: MAP_CONDS.map((k) => ({ value: k, text: t('c_' + k) }))
+        .concat([{ value: '@cell', text: t('c_mapCell') }]) });
+    }
     const names = varOptions(isCompare(c) ? c.v : null);
     if (names.length) items.push({ group: t('condVars'), options: names.map((o) => ({ value: '#' + o.value, text: o.text })) });
     const sel = makeSelect('cond', items, cur, (val) => {
       if (val.charAt(0) === '#') {
         const old = isCompare(b.cond) ? b.cond : null;
         b.cond = { v: val.slice(1), op: old ? old.op : '=', n: old ? old.n : 5 };
+      } else if (val === '@cell') {
+        b.cond = { x: 0, y: 0, dir: 1 };      /* Feld 0 0 nach 1 (Norden) offen */
       } else {
         b.cond = val;
       }
       renderProgram();
     });
+    if (live) fitSelect(sel);
+    if (isCellCond(c)) {
+      /* "Feld x y nach r offen": three number fields after the picker */
+      const out = [sel];
+      for (const part of t('c_mapCellT').split(/(\{[xyr]\})/)) {
+        if (part === '{x}' || part === '{y}') out.push(opField(c, part.charAt(1), live, slot(part.charAt(1))));
+        else if (part === '{r}') out.push(opField(c, 'dir', live, slot('dir')));
+        else if (part) out.push(document.createTextNode(part));
+      }
+      return out;
+    }
     if (!isCompare(c)) return [sel];
     const op = makeSelect('cond cond-op', OPS.map((o) => ({ value: o, text: o })), c.op, (val) => { c.op = val; renderProgram(); });
-    return [sel, op, numField(() => c.n, (v) => { c.n = v; }, live)];
+    return [sel, op, opField(c, 'n', live, slot('n'))];
   }
 
-  function labelNodes(b, template, live) {
+  /* A block's label template. Profi-Woerter puts the keywords of real
+     programming languages on the blocks ([if], [repeat] ...); a block
+     without a p_ label keeps its normal one. Only the label changes -
+     never the program, the help texts or the tasks. */
+  function labelOf(key) {
+    const pro = profi && TEXT[lang] && TEXT[lang]['p_' + key];
+    return pro || t('b_' + key);
+  }
+
+  /* "[if]" -> a keyword, drawn as code */
+  function keyword(p) {
+    const k = document.createElement('span');
+    k.className = 'kw';
+    k.textContent = p.slice(1, -1);
+    return k;
+  }
+
+  /* {n} {i} {x} {y}: number fields; {v} a variable, {l} a list, {c} the
+     condition, {f} an own block's name; [..] a keyword */
+  function labelNodes(b, template, live, path) {
     const out = [];
     const def = BLOCKS[b.t];
-    const parts = template.split(/(\{n\}|\{c\}|\{v\})/);
+    const parts = template.split(/(\{[a-z]\}|\[[^\]]+\])/);
     for (const p of parts) {
-      if (p === '{n}' && def.num) {
-        out.push(numField(() => b.n, (v) => { b.n = v; }, live));
-      } else if (p === '{n}') {
+      const key = p.length === 3 && p.charAt(0) === '{' ? p.charAt(1) : null;
+      if (p.charAt(0) === '[') {
+        out.push(keyword(p));
+      } else if (key === 'f') {
+        const s = document.createElement('span'); s.className = 'fname'; s.textContent = b.f;
+        out.push(s);
+      } else if (key === 'n' && def.count) {
         const wrap = document.createElement('span');
         wrap.className = 'num';
         const minus = document.createElement('button'); minus.type = 'button'; minus.textContent = '\u2212';
@@ -1197,10 +1654,18 @@
         plus.addEventListener('click', (e) => { e.stopPropagation(); b.n = Math.min(9, b.n + 1); renderProgram(); });
         wrap.append(minus, val, plus);
         out.push(wrap);
-      } else if (p === '{v}') {
-        out.push(makeSelect('cond var-pick', varOptions(b.v), b.v, (val) => { b.v = val; renderProgram(); }));
-      } else if (p === '{c}') {
-        out.push(...condNodes(b, live));
+      } else if (key && def.ops && key in def.ops) {
+        out.push(opField(b, key, live, path && { p: path, k: key }));
+      } else if (key === 'v') {
+        const vs = makeSelect('cond var-pick', varOptions(b.v), b.v, (val) => { b.v = val; renderProgram(); });
+        if (live) fitSelect(vs);
+        out.push(vs);
+      } else if (key === 'l') {
+        const ls = makeSelect('cond var-pick list-pick', listOptions(b.l), b.l, (val) => { b.l = val; renderProgram(); });
+        if (live) fitSelect(ls);
+        out.push(ls);
+      } else if (key === 'c') {
+        out.push(...condNodes(b, live, path));
       } else if (p) {
         out.push(document.createTextNode(p));
       }
@@ -1213,6 +1678,7 @@
     const node = document.createElement('div');
     node.className = 'blk cat-' + def.cat + (def.body ? ' has-body' : '');
     node.dataset.type = b.t;
+    if (def.f) node.dataset.f = b.f;
     if (path) node.dataset.path = JSON.stringify(path);
     node.dataset.live = live ? '1' : '';
 
@@ -1220,7 +1686,7 @@
     row.className = 'row';
     const gl = document.createElement('span'); gl.className = 'glyph'; gl.textContent = def.glyph;
     const lb = document.createElement('span'); lb.className = 'lbl';
-    lb.append(...labelNodes(b, t('b_' + b.t), live));
+    lb.append(...labelNodes(b, labelOf(b.t), live, path));
     row.append(gl, lb);
     node.append(row);
 
@@ -1229,7 +1695,8 @@
       if (def.alt) {
         const mid = document.createElement('div');
         mid.className = 'mid';
-        const s = document.createElement('span'); s.className = 'lbl'; s.textContent = t('b_else');
+        const s = document.createElement('span'); s.className = 'lbl';
+        s.append(...labelNodes(b, labelOf('else'), live));
         mid.append(s);
         node.append(mid, armFor(b.alt, path, 'alt', live));
       }
@@ -1250,38 +1717,95 @@
     return arm;
   }
 
+  /* An own block's definition, under the program: "definiere Name" with a
+     belly that takes blocks like any other (its blocks have paths that
+     start below 0: -1 is the first own block). x deletes it if unused. */
+  function renderDef(f, k) {
+    const node = document.createElement('div');
+    node.className = 'blk cat-func has-body def';
+    node.dataset.def = f.name;
+    const row = document.createElement('div');
+    row.className = 'row';
+    const gl = document.createElement('span'); gl.className = 'glyph'; gl.textContent = BLOCKS.call.glyph;
+    const lb = document.createElement('span'); lb.className = 'lbl';
+    lb.append(...labelNodes({ t: 'call', f: f.name }, labelOf('def'), false));
+    const del = document.createElement('button');
+    del.type = 'button'; del.className = 'def-del'; del.textContent = '\u00d7';
+    del.setAttribute('aria-label', t('funcDel', { f: f.name }));
+    del.addEventListener('click', () => deleteFunc(f.name));
+    row.append(gl, lb, del);
+    const foot = document.createElement('div'); foot.className = 'foot';
+    node.append(row, armFor(f.body, [-(k + 1)], 'body', true), foot);
+    return node;
+  }
+
+  /* A value pill in the box ("Laenge von Weg"): drag it onto a number field
+     in the program. */
+  function valuePill(o, cat) {
+    const p = document.createElement('span');
+    p.className = 'val-pill cat-' + cat;
+    p.dataset.op = JSON.stringify(o);
+    p.textContent = opText(o);
+    return p;
+  }
+
+  const PALETTE_CATS = ['move', 'loop', 'decide', 'var', 'list', 'map', 'func'];
+  const CAT_INFO = { var: 'i_vars', list: 'i_lists', map: 'i_map', func: 'i_funcs' };
+
   function renderPalette() {
     const host = $('paletteList');
     host.textContent = '';
     const allow = level().allow;
     const groups = {};
     for (const type of allow) (groups[BLOCKS[type].cat] ||= []).push(type);
-    for (const cat of ['move', 'loop', 'decide', 'var']) {
+    for (const cat of PALETTE_CATS) {
       if (!groups[cat]) continue;
       const g = document.createElement('div');
       g.className = 'cat cat-' + cat;
       const h = document.createElement('div'); h.className = 'cat-name'; h.textContent = t('cat_' + cat);
       const box = document.createElement('div'); box.className = 'cat-blocks';
-      if (cat === 'var') {
+      if (CAT_INFO[cat]) {
         const i = document.createElement('button');
-        i.className = 'info'; i.textContent = 'i'; i.dataset.tipKey = 'i_vars'; i.setAttribute('aria-label', 'Info');
+        i.className = 'info'; i.textContent = 'i'; i.dataset.tipKey = CAT_INFO[cat]; i.setAttribute('aria-label', 'Info');
         h.append(' ', i);
-        box.append(varTools());
-        if (!vars.length) { g.append(h, box); host.append(g); continue; }   /* blocks once a variable exists */
       }
-      for (const type of groups[cat]) box.append(renderBlock(freshBlock(type), null, false));
+      if (cat === 'var' || cat === 'list' || cat === 'func') box.append(nameTools(cat));
+      if (cat === 'func') {
+        for (const f of funcs) box.append(renderBlock({ t: 'call', f: f.name }, null, false));
+      } else {
+        /* a block that needs a variable or a list appears once there is one */
+        for (const type of groups[cat]) {
+          const def = BLOCKS[type];
+          if ((def.v && !vars.length) || (def.l && !lists.length)) continue;
+          box.append(renderBlock(freshBlock(type), null, false));
+        }
+      }
+      if (cat === 'list' && lists.length) {
+        const pills = document.createElement('div');
+        pills.className = 'val-pills';
+        for (const l of lists) pills.append(valuePill({ len: l }, 'list'));
+        box.append(pills);
+      }
+      if (cat === 'map') {                       /* where the robot is, where the star is */
+        const pills = document.createElement('div');
+        pills.className = 'val-pills';
+        for (const p of POS) pills.append(valuePill({ p }, 'map'));
+        box.append(pills);
+      }
       g.append(h, box);
       host.append(g);
     }
     syncVarCtl();
   }
 
-  function freshBlock(type) {
+  function freshBlock(type, f) {
     const def = BLOCKS[type];
     const b = { t: type };
+    if (def.f) b.f = f || '';
     if (def.count) b.n = def.countDefault;
     if (def.v) b.v = vars[0] || '';
-    if (def.num) b.n = def.numDefault;
+    if (def.l) b.l = lists[0] || '';
+    if (def.ops) for (const k in def.ops) b[k] = def.ops[k];
     if (def.cond) b.cond = def.condDefault;
     /* "wiederhole bis" counts to 5 when there is a variable to count with */
     if (type === 'repeatUntil' && vars.length) b.cond = { v: vars[0], op: '=', n: 5 };
@@ -1290,60 +1814,107 @@
     return b;
   }
 
-  /* ---------------- variables ----------------
-   * One list of names per program. "Neue Variable" opens a small field
-   * right in the palette (no browser prompt); a name is letters and digits,
-   * a letter first, up to 12, and unique (case does not count). A variable
-   * can be deleted only while no block uses it. */
-  let varFormOpen = false;
-  let varMsg = '';
+  /* ---------------- names: variables, lists and own blocks ----------------
+   * The Variablen, Listen and Meine Bausteine boxes share one small tool:
+   * "Neue Variable" / "Neue Liste" / "Neuer Baustein" opens a name field right in the palette
+   * (no browser prompt), with a suggestion and the name rules; OK stays off
+   * while the name is wrong, and the reason shows under the field. A name
+   * is unique, case does not count.
+   * Variables: letters and digits, a letter first, up to 12; at most 12;
+   * chips with x delete one, but only while no block uses it.
+   * Lists: named like variables, in one name space with them (a list and a
+   * variable never share a name); at most 8; chips like variables.
+   * Own blocks: letters, digits and single spaces, up to 16; at most 8;
+   * the x on the definition deletes one, again only while unused. */
+  let formOpen = null;            /* whose name field is open: 'var', 'list', 'func' or null */
+  const toolMsg = { var: '', list: '', func: '' };
 
+  /* list given (a file, localStorage): only that list counts; otherwise
+     the program's variables and lists */
   function varNameProblem(name, list) {
     if (!VAR_NAME.test(name)) return 'varBad';
     const low = name.toLowerCase();
-    if ((list || vars).some((v) => v.toLowerCase() === low)) return 'varTaken';
+    if ((list || vars.concat(lists)).some((v) => v.toLowerCase() === low)) return 'varTaken';
     if ((list || vars).length >= VAR_MAX) return 'varFull';
     return null;
   }
 
-  function suggestName() {
-    const base = (TEXT[lang] && TEXT[lang].varSuggest) || TEXT.de.varSuggest;
-    for (const s of base) if (!varNameProblem(s)) return s;
-    for (let i = 2; i < 100; i++) if (!varNameProblem(base[1] + i)) return base[1] + i;
+  function listNameProblem(name, list) {
+    if (typeof name !== 'string' || !VAR_NAME.test(name)) return 'varBad';
+    const low = name.toLowerCase();
+    if ((list || lists.concat(vars)).some((v) => v.toLowerCase() === low)) return 'varTaken';
+    if ((list || lists).length >= LIST_MAX) return 'listFull';
+    return null;
+  }
+
+  function funcNameProblem(name, list) {
+    if (typeof name !== 'string' || name !== name.trim() || !FUNC_NAME.test(name)) return 'funcBad';
+    const names = list || funcs.map((f) => f.name);
+    const low = name.toLowerCase();
+    if (names.some((v) => v.toLowerCase() === low)) return 'varTaken';
+    if (names.length >= FUNC_MAX) return 'funcFull';
+    return null;
+  }
+
+  /* what each kind of name needs */
+  const KIND = {
+    var: { problem: (n) => varNameProblem(n), add: (n) => addVar(n), max: 12, suggest: 'varSuggest', sep: '',
+           btn: 'newVarBtn', input: 'varNameIn', newKey: 'newVar', nameKey: 'varName' },
+    list: { problem: (n) => listNameProblem(n), add: (n) => addList(n), max: 12, suggest: 'listSuggest', sep: '',
+            btn: 'newListBtn', input: 'listNameIn', newKey: 'newList', nameKey: 'listName' },
+    func: { problem: (n) => funcNameProblem(n), add: (n) => addFunc(n), max: 16, suggest: 'funcSuggest', sep: ' ',
+            btn: 'newFuncBtn', input: 'funcNameIn', newKey: 'newFunc', nameKey: 'funcName' },
+  };
+  const tidyName = (s) => s.replace(/\s+/g, ' ').trim();
+
+  /* the suggestion: Schritte, then Zaehler, then Zaehler2 ...; own blocks:
+     Mein Baustein, then Mein Baustein 2 ... */
+  function suggestName(kind) {
+    const k = KIND[kind || 'var'];
+    const base = (TEXT[lang] && TEXT[lang][k.suggest]) || TEXT.de[k.suggest];
+    for (const s of base) if (!k.problem(s)) return s;
+    const stem = base[base.length - 1];
+    for (let i = 2; i < 100; i++) if (!k.problem(stem + k.sep + i)) return stem + k.sep + i;
     return '';
   }
 
-  function varTools() {
+  function nameTools(kind) {
+    const k = KIND[kind];
     const box = document.createElement('div');
     box.className = 'var-tools';
-    if (varFormOpen) {
+    const msgBox = (text) => {
+      const msg = document.createElement('div');
+      msg.className = 'var-msg';
+      msg.setAttribute('role', 'status');
+      msg.textContent = text || '';
+      return msg;
+    };
+    if (formOpen === kind) {
       const form = document.createElement('form');
       form.className = 'var-new';
       const inp = stopDrag(document.createElement('input'));
-      inp.id = 'varNameIn';
+      inp.id = k.input;
       inp.className = 'var-ctl';
-      inp.maxLength = 12;
+      inp.maxLength = k.max;
       inp.autocomplete = 'off';
       inp.spellcheck = false;
-      inp.value = suggestName();
-      inp.setAttribute('aria-label', t('varName'));
+      inp.value = suggestName(kind);
+      inp.setAttribute('aria-label', t(k.nameKey));
       const ok = document.createElement('button');
       ok.type = 'submit'; ok.className = 'var-ok var-ctl'; ok.textContent = 'OK';
       const no = document.createElement('button');
       no.type = 'button'; no.className = 'var-x var-ctl'; no.textContent = '\u00d7';
       no.setAttribute('aria-label', t('varCancel'));
+      const msg = msgBox();
       const check = () => {
-        const why = inp.value ? varNameProblem(inp.value.trim()) : 'varBad';
+        const why = inp.value ? k.problem(tidyName(inp.value)) : 'varBad';
         ok.disabled = !!why || !!session;
         msg.textContent = inp.value && why ? t(why) : '';
       };
       inp.addEventListener('input', check);
-      inp.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); closeVarForm(); } });
-      no.addEventListener('click', closeVarForm);
-      form.addEventListener('submit', (e) => { e.preventDefault(); addVar(inp.value.trim()); });
-      const msg = document.createElement('div');
-      msg.className = 'var-msg';
-      msg.setAttribute('role', 'status');
+      inp.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); closeForm(); } });
+      no.addEventListener('click', closeForm);
+      form.addEventListener('submit', (e) => { e.preventDefault(); k.add(tidyName(inp.value)); });
       form.append(inp, ok, no);
       box.append(form, msg);
       check();
@@ -1351,32 +1922,27 @@
     } else {
       const add = document.createElement('button');
       add.type = 'button';
-      add.id = 'newVarBtn';
+      add.id = k.btn;
       add.className = 'var-add var-ctl';
       const plus = el('svg', { class: 'ico', viewBox: '0 0 16 16', 'aria-hidden': 'true' });
       plus.append(el('path', { d: 'M8 3v10M3 8h10' }));
-      add.append(plus, document.createTextNode(t('newVar')));
-      add.addEventListener('click', openVarForm);
+      add.append(plus, document.createTextNode(t(k.newKey)));
+      add.addEventListener('click', () => openForm(kind));
       box.append(add);
-      if (varMsg) {
-        const msg = document.createElement('div');
-        msg.className = 'var-msg';
-        msg.setAttribute('role', 'status');
-        msg.textContent = varMsg;
-        box.append(msg);
-      }
+      if (toolMsg[kind]) box.append(msgBox(toolMsg[kind]));
     }
-    if (vars.length) {
+    const chipNames = kind === 'var' ? vars : kind === 'list' ? lists : [];
+    if (chipNames.length) {
       const list = document.createElement('div');
       list.className = 'var-chips';
-      for (const v of vars) {
+      for (const v of chipNames) {
         const chip = document.createElement('span');
         chip.className = 'var-chip';
         const name = document.createElement('span'); name.textContent = v;
         const del = document.createElement('button');
         del.type = 'button'; del.className = 'var-del var-ctl'; del.textContent = '\u00d7';
         del.setAttribute('aria-label', t('varDel', { v }));
-        del.addEventListener('click', () => deleteVar(v));
+        del.addEventListener('click', () => (kind === 'list' ? deleteList(v) : deleteVar(v)));
         chip.append(name, del);
         list.append(chip);
       }
@@ -1385,36 +1951,91 @@
     return box;
   }
 
-  function openVarForm() { if (session) return; varFormOpen = true; varMsg = ''; renderPalette(); }
-  function closeVarForm() { varFormOpen = false; renderPalette(); }
+  function openForm(kind) {
+    if (session) return;
+    formOpen = kind;
+    toolMsg[kind] = '';
+    renderPalette();
+  }
+  function closeForm() { formOpen = null; renderPalette(); }
+  /* a new task or file: no field open, no old message */
+  function resetForms() { formOpen = null; for (const k in toolMsg) toolMsg[k] = ''; }
 
   /* true if the name was added */
   function addVar(name) {
     if (session) return false;
     const why = varNameProblem(name);
-    if (why) { varMsg = t(why); if (!varFormOpen) renderPalette(); return false; }
+    if (why) { toolMsg.var = t(why); if (formOpen !== 'var') renderPalette(); return false; }
     vars.push(name);
-    varFormOpen = false;
-    varMsg = '';
+    resetForms();
     varsChanged();
     return true;
   }
 
-  function varUsed(name, list) {
-    for (const b of list || prog) {
-      if (b.v === name || (isCompare(b.cond) && b.cond.v === name)) return true;
-      if ((b.body && varUsed(name, b.body)) || (b.alt && varUsed(name, b.alt))) return true;
-    }
-    return false;
+  /* every block of the program, own blocks included */
+  function eachBlock(fn) {
+    const walk = (list) => { for (const b of list) { fn(b); if (b.body) walk(b.body); if (b.alt) walk(b.alt); } };
+    walk(prog);
+    for (const f of funcs) walk(f.body);
+  }
+
+  /* every number field of a block: its own, and its condition's */
+  function opsOf(b) {
+    const out = [];
+    const def = BLOCKS[b.t];
+    if (def && def.ops) for (const k in def.ops) out.push(b[k]);
+    if (isCompare(b.cond)) out.push(b.cond.n);
+    if (isCellCond(b.cond)) out.push(b.cond.x, b.cond.y, b.cond.dir);
+    return out.filter((o) => o && typeof o === 'object');
+  }
+
+  function varUsed(name) {
+    let used = false;
+    eachBlock((b) => {
+      if (b.v === name || (isCompare(b.cond) && b.cond.v === name)) used = true;
+      for (const o of opsOf(b)) if (o.v === name) used = true;
+    });
+    return used;
+  }
+
+  function listUsed(name) {
+    let used = false;
+    eachBlock((b) => {
+      if (b.l === name) used = true;
+      for (const o of opsOf(b)) if (o.len === name) used = true;
+    });
+    return used;
+  }
+
+  /* true if the name was added */
+  function addList(name) {
+    if (session) return false;
+    const why = listNameProblem(name);
+    if (why) { toolMsg.list = t(why); if (formOpen !== 'list') renderPalette(); return false; }
+    lists.push(name);
+    resetForms();
+    varsChanged();
+    return true;
+  }
+
+  /* true if deleted; a list that a block still uses stays */
+  function deleteList(name) {
+    if (session) return false;
+    if (listUsed(name)) { toolMsg.list = t('varUsed', { v: name }); renderPalette(); return false; }
+    lists.splice(lists.indexOf(name), 1);
+    listVals.delete(name);
+    toolMsg.list = '';
+    varsChanged();
+    return true;
   }
 
   /* true if deleted; a variable that a block still uses stays */
   function deleteVar(name) {
     if (session) return false;
-    if (varUsed(name)) { varMsg = t('varUsed', { v: name }); renderPalette(); return false; }
+    if (varUsed(name)) { toolMsg.var = t('varUsed', { v: name }); renderPalette(); return false; }
     vars.splice(vars.indexOf(name), 1);
     varVals.delete(name);
-    varMsg = '';
+    toolMsg.var = '';
     varsChanged();
     return true;
   }
@@ -1425,9 +2046,73 @@
     renderWatch();
   }
 
-  /* nothing about variables changes while a program runs */
+  /* ---------------- own blocks ("Meine Bausteine") ----------------
+   * A name for a list of blocks, defined under the program and used like
+   * any block. No parameters (v1); variables are shared with the program.
+   * A block must never use itself, not even through another one: such a
+   * drop is refused with a message, and a file with it does not open. */
+  function addFunc(name) {
+    if (session) return false;
+    const why = funcNameProblem(name);
+    if (why) { toolMsg.func = t(why); if (formOpen !== 'func') renderPalette(); return false; }
+    funcs.push({ name, body: [] });
+    resetForms();
+    renderPalette();
+    renderProgram();
+    return true;
+  }
+
+  /* the own blocks a list of blocks uses, directly */
+  function callsIn(list, out) {
+    out = out || new Set();
+    for (const b of list) {
+      if (b.t === 'call') out.add(b.f);
+      if (b.body) callsIn(b.body, out);
+      if (b.alt) callsIn(b.alt, out);
+    }
+    return out;
+  }
+
+  /* does own block `from` use `to`, directly or through others? */
+  function reaches(from, to, list, seen) {
+    seen = seen || new Set();
+    if (seen.has(from)) return false;
+    seen.add(from);
+    const f = (list || funcs).find((x) => x.name === from);
+    if (!f) return false;
+    for (const g of callsIn(f.body)) if (g === to || reaches(g, to, list, seen)) return true;
+    return false;
+  }
+
+  /* Would `block` dropped into container cpath make an own block use
+     itself? Only the bellies of own blocks (cpath below 0) can. */
+  function wouldRecurse(block, cpath) {
+    if (!cpath.length || cpath[0] >= 0) return false;
+    const host = funcs[-cpath[0] - 1].name;
+    for (const g of callsIn([block])) if (g === host || reaches(g, host)) return true;
+    return false;
+  }
+
+  function funcUsed(name) {
+    let used = false;
+    eachBlock((b) => { if (b.t === 'call' && b.f === name) used = true; });
+    return used;
+  }
+
+  /* true if deleted (with the blocks inside it); a used one stays */
+  function deleteFunc(name) {
+    if (session) return false;
+    if (funcUsed(name)) { say(t('funcUsed', { f: name })); return false; }
+    funcs.splice(funcs.findIndex((f) => f.name === name), 1);
+    hideVerdict();
+    renderPalette();
+    renderProgram();
+    return true;
+  }
+
+  /* nothing about names changes while a program runs */
   function syncVarCtl() {
-    document.querySelectorAll('#paletteList .var-ctl').forEach((c) => { c.disabled = !!session; });
+    document.querySelectorAll('#paletteList .var-ctl, #defList .def-del').forEach((c) => { c.disabled = !!session; });
   }
 
   /* ---------------- the watch panel ----------------
@@ -1436,8 +2121,14 @@
    * each run. Under it, what "zeige" showed in this run. */
   function resetVars() {
     varVals = new Map();
+    listVals = new Map();
     lastChanged = null;
+    lastList = null;
     shownLog = [];
+    pendingBubble = null;
+    resetMap();
+    drawMapLayer();
+    for (const k in dirty) dirty[k] = false;
     hideBubble();
     renderWatch();
   }
@@ -1445,14 +2136,17 @@
   function setVarValue(name, value) {
     const changed = varVal(name) !== value;
     varVals.set(name, value);
-    if (changed) lastChanged = name;
-    renderWatch(changed ? name : null);
+    if (changed) { lastChanged = name; lastList = null; }
+    if (quiet) dirty.watch = true;
+    else renderWatch(changed ? name : null);
   }
 
   function renderWatch(bump) {
     const box = $('watch');
     if (!box) return;
-    box.hidden = !vars.length;
+    box.hidden = !vars.length && !lists.length;
+    $('watchVars').hidden = !vars.length;
+    renderWatchLists();
     const list = $('watchList');
     list.textContent = '';
     for (const v of vars) {
@@ -1480,36 +2174,99 @@
     }
   }
 
+  /* Each list as a row of numbered boxes: item 1 first, the item that
+     changed last in gold; a long list shows its first WATCH_ITEMS and how
+     many more there are. */
+  const WATCH_ITEMS = 30;
+  function renderWatchLists() {
+    const host = $('watchLists');
+    host.textContent = '';
+    host.hidden = !lists.length;
+    if (!lists.length) return;
+    const head = document.createElement('span');
+    head.className = 'watch-title';
+    const ht = document.createElement('span'); ht.textContent = t('cat_list');
+    const i = document.createElement('button');
+    i.className = 'info'; i.textContent = 'i'; i.dataset.tipKey = 'i_watchLists'; i.setAttribute('aria-label', 'Info');
+    head.append(ht, i);
+    host.append(head);
+    for (const name of lists) {
+      const arr = listOf(name);
+      const row = document.createElement('div');
+      row.className = 'wl-row';
+      row.dataset.list = name;
+      const nm = document.createElement('span'); nm.className = 'wl-name'; nm.textContent = name;
+      const items = document.createElement('span'); items.className = 'wl-items';
+      if (!arr.length) {
+        const e = document.createElement('span'); e.className = 'wl-empty'; e.textContent = t('listEmpty');
+        items.append(e);
+      }
+      arr.slice(0, WATCH_ITEMS).forEach((n, k) => {
+        const it = document.createElement('span');
+        it.className = 'wli' + (lastList && lastList.l === name && lastList.i === k ? ' is-new' : '');
+        const ix = document.createElement('i'); ix.textContent = k + 1;
+        it.append(ix, document.createTextNode(fmtNum(n)));
+        items.append(it);
+      });
+      if (arr.length > WATCH_ITEMS) {
+        const more = document.createElement('span'); more.className = 'wl-more';
+        more.textContent = t('listMore', { n: arr.length - WATCH_ITEMS });
+        items.append(more);
+      }
+      row.append(nm, items);
+      host.append(row);
+    }
+  }
+
   function renderProgram() {
     const host = $('progList');
     host.textContent = '';
     host.dataset.cpath = '[]';
     host.dataset.empty = t('dropHere');
     prog.forEach((b, i) => host.append(renderBlock(b, [i], true)));
-    const used = countBlocks(prog);
+    const defs = $('defList');
+    defs.textContent = '';
+    funcs.forEach((f, k) => defs.append(renderDef(f, k)));
+    defs.hidden = !funcs.length;
+    const used = countAll();
     $('blockCount').textContent = used + ' ' + blocksWord(used);
+    syncVarCtl();
     saveProg();
     save();
   }
 
-  function highlight(b) {
-    document.querySelectorAll('#progList .blk.running').forEach((n) => n.classList.remove('running'));
+  /* The block that runs now gets a gold ring; the own blocks it runs
+     inside ("calling") a fainter one. */
+  function highlight(b, stack) {
+    document.querySelectorAll('.prog-scroll .blk.running, .prog-scroll .blk.calling')
+      .forEach((n) => n.classList.remove('running', 'calling'));
     if (!b) return;
-    const path = findPath(prog, b);
-    if (!path) return;
-    const want = JSON.stringify(path);
-    const node = Array.from(document.querySelectorAll('#progList .blk'))
-      .find((x) => x.dataset.path === want);
-    if (node) node.classList.add('running');
+    const mark = (blk, cls) => {
+      const path = findPath(blk);
+      const node = path && document.querySelector(".prog-scroll .blk[data-path='" + JSON.stringify(path) + "']");
+      if (node) node.classList.add(cls);
+    };
+    for (const c of stack || []) mark(c, 'calling');
+    mark(b, 'running');
   }
 
-  function findPath(list, target, base) {
-    base = base || [];
+  /* where a block stands: in the program, or in an own block (path below 0) */
+  function findPath(target) {
+    const p = findIn(prog, target, []);
+    if (p) return p;
+    for (let k = 0; k < funcs.length; k++) {
+      const q = findIn(funcs[k].body, target, [-(k + 1), 'body']);
+      if (q) return q;
+    }
+    return null;
+  }
+
+  function findIn(list, target, base) {
     for (let i = 0; i < list.length; i++) {
       if (list[i] === target) return base.concat(i);
       for (const key of ['body', 'alt']) {
         if (list[i][key]) {
-          const p = findPath(list[i][key], target, base.concat(i, key));
+          const p = findIn(list[i][key], target, base.concat(i, key));
           if (p) return p;
         }
       }
@@ -1518,9 +2275,14 @@
   }
 
   /* ---------------- blocks: dragging ---------------- */
+  /* the list a container path points at; a path that starts below 0 is
+     in an own block: -1 the first one, -2 the second ... */
   const arrayAt = (cpath) => {
     let list = prog;
-    for (let i = 0; i < cpath.length; i += 2) list = list[cpath[i]][cpath[i + 1]];
+    for (let i = 0; i < cpath.length; i += 2) {
+      const b = i === 0 && cpath[0] < 0 ? funcs[-cpath[0] - 1] : list[cpath[i]];
+      list = b[cpath[i + 1]];
+    }
     return list;
   };
 
@@ -1529,14 +2291,16 @@
   function onPointerDown(ev) {
     if (ev.button != null && ev.button !== 0) return;
     if (ev.target.closest('button, select, input')) return;
+    const pill = ev.target.closest('.val-pill');
+    if (pill) { if (!session) startPill(ev, pill); return; }
     const node = ev.target.closest('.blk');
-    if (!node) return;
+    if (!node || node.classList.contains('def')) return;   /* a definition stays where it is */
     if (session) return;                       /* not while a program runs */
 
     const live = node.dataset.live === '1';
     const srcPath = live ? JSON.parse(node.dataset.path) : null;
     const block = live ? arrayAt(srcPath.slice(0, -1))[srcPath[srcPath.length - 1]]
-                       : freshBlock(node.dataset.type);
+                       : freshBlock(node.dataset.type, node.dataset.f);
 
     const rect = node.getBoundingClientRect();
     const ghost = $('ghost');
@@ -1564,6 +2328,7 @@
     if (!drag) return;
     drag.moved = true;
     moveGhost(ev.clientX, ev.clientY);
+    if (drag.pill) { pillTarget(ev.clientX, ev.clientY); return; }
 
     drag.overTrash = hitTest($('trash'), ev.clientX, ev.clientY);
     $('trash').classList.toggle('hot', !!(drag.overTrash && drag.srcPath));
@@ -1612,6 +2377,12 @@
     const d = drag;
     drag = null;
     if (!d) return;
+    if (d.pill) {
+      document.querySelectorAll('.slot-hot').forEach((n) => n.classList.remove('slot-hot'));
+      if (d.slot) dropValue(d.op, d.slot);
+      renderProgram();
+      return;
+    }
 
     const tgt = d.target;
     if (!tgt) {
@@ -1619,24 +2390,67 @@
       renderProgram();
       return;
     }
-    /* never drop a block inside itself */
-    if (d.srcPath && JSON.stringify(tgt.cpath.slice(0, d.srcPath.length)) === JSON.stringify(d.srcPath)) {
-      renderProgram();
-      return;
-    }
-    let index = tgt.index;
-    if (d.srcPath) {
-      const srcContainer = d.srcPath.slice(0, -1);
-      const srcIndex = d.srcPath[d.srcPath.length - 1];
-      removeAt(d.srcPath);
-      if (JSON.stringify(srcContainer) === JSON.stringify(tgt.cpath) && srcIndex < index) index--;
-    }
-    arrayAt(tgt.cpath).splice(index, 0, d.block);
+    dropBlock(d.block, d.srcPath, tgt.cpath, tgt.index);
     renderProgram();
+  }
+
+  /* Put `block` into container cpath at index - from the palette (srcPath
+     null) or moved from srcPath. Refused: a block into itself, and an own
+     block that would use itself (with a message). True if it moved. */
+  function dropBlock(block, srcPath, cpath, index) {
+    if (srcPath && JSON.stringify(cpath.slice(0, srcPath.length)) === JSON.stringify(srcPath)) return false;
+    if (wouldRecurse(block, cpath)) { say(t('funcSelf'), 'lose'); return false; }
+    if (srcPath) {
+      const srcContainer = srcPath.slice(0, -1);
+      const srcIndex = srcPath[srcPath.length - 1];
+      removeAt(srcPath);
+      if (JSON.stringify(srcContainer) === JSON.stringify(cpath) && srcIndex < index) index--;
+    }
+    arrayAt(cpath).splice(index, 0, block);
+    return true;
   }
 
   function removeAt(path) {
     arrayAt(path.slice(0, -1)).splice(path[path.length - 1], 1);
+  }
+
+  /* ---------------- value pills ----------------
+   * A pill from the box ("Laenge von Weg") is dragged onto a number field
+   * in the program: the field then holds that value. */
+  function startPill(ev, pill) {
+    const rect = pill.getBoundingClientRect();
+    const ghost = $('ghost');
+    ghost.textContent = '';
+    ghost.style.width = '';
+    ghost.append(pill.cloneNode(true));
+    ghost.hidden = false;
+    drag = { pill: true, op: JSON.parse(pill.dataset.op), slot: null, dx: ev.clientX - rect.left, dy: ev.clientY - rect.top };
+    moveGhost(ev.clientX, ev.clientY);
+    ev.preventDefault();
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp, { once: true });
+    window.addEventListener('pointercancel', onPointerUp, { once: true });
+  }
+
+  function pillTarget(x, y) {
+    document.querySelectorAll('.slot-hot').forEach((n) => n.classList.remove('slot-hot'));
+    const under = document.elementFromPoint(x, y);
+    const slot = under && under.closest('.prog-scroll [data-slot]');
+    drag.slot = slot ? JSON.parse(slot.dataset.slot) : null;
+    if (slot) slot.classList.add('slot-hot');
+  }
+
+  /* slot: {p: block path, k: field, c: 1 if in the condition}. True if set. */
+  function dropValue(op, slot) {
+    if (session || !slot || !Array.isArray(slot.p) || !slot.p.length) return false;
+    let blk;
+    try { blk = arrayAt(slot.p.slice(0, -1))[slot.p[slot.p.length - 1]]; } catch (e) { return false; }
+    if (!blk || !BLOCKS[blk.t]) return false;
+    const ops = BLOCKS[blk.t].ops;
+    const condOk = (isCompare(blk.cond) && slot.k === 'n') || (isCellCond(blk.cond) && ['x', 'y', 'dir'].includes(slot.k));
+    if (slot.c ? !condOk : !(ops && slot.k in ops)) return false;
+    (slot.c ? blk.cond : blk)[slot.k] = opData(op);
+    return true;
   }
 
   /* ---------------- levels and messages ---------------- */
@@ -1682,8 +2496,9 @@
     levelIx = i;
     prog = progs[level().id] || [];
     vars = varsBy[level().id] || [];
-    varFormOpen = false;
-    varMsg = '';
+    funcs = funcsBy[level().id] || [];
+    lists = listsBy[level().id] || [];
+    resetForms();
     resetRun();
     renderLevels();
     renderTask();
@@ -1747,25 +2562,35 @@
   }
 
   /* ---------------- program files ----------------
-   * Speichern downloads {version:2, level, lang, vars, prog} as
+   * Speichern downloads {version, level, lang, vars, funcs?, prog} as
    * ratrocket-aufgabe<N>.json - on level 7 with the pupil's maze as well.
-   * vars lists the program's variable names. Version 1 files (before
-   * variables: no vars) still open.
+   * vars lists the program's variable names, lists its lists, funcs its
+   * own blocks ({name, body}). A number field holds a number or (version 3)
+   * a value: {v: variable} or {len: list}. The file says the lowest version that holds the
+   * program, so an older copy of the page still opens what it can:
+   *   1 - before variables (no vars), the seven first block types;
+   *   2 - variables, comparisons, "wiederhole bis";
+   *   3 - own blocks, lists, values in number fields.
    * Opening is strict: JSON.parse only (nothing in a file ever runs), known
-   * block types and conditions only, variable names valid and declared,
-   * repeat counts clamped to 1..9, other numbers to -999..999, and any other
-   * key is dropped. A bad file changes nothing. */
+   * block types and conditions only, names valid and declared, no own
+   * block that uses itself, repeat counts clamped to 1..9, other numbers to
+   * -999..999, and any other key is dropped. A bad file changes nothing. */
   const FILE_MAX = 200000, FILE_BLOCKS = 500, FILE_DEPTH = 12;
-  const FILE_VERSION = 2;
   const V1_TYPES = ['move', 'right', 'left', 'around', 'repeat', 'untilOut', 'ifElse'];
+  const V2_TYPES = V1_TYPES.concat(['repeatUntil', 'setVar', 'changeVar', 'showVar']);
 
-  const condData = (c) => (isCompare(c) ? { v: c.v, op: c.op, n: c.n } : c);
+  const opData = (o) => (typeof o === 'number' ? o : JSON.parse(JSON.stringify(o)));
+  const condData = (c) => (isCompare(c) ? { v: c.v, op: c.op, n: opData(c.n) }
+    : isCellCond(c) ? { x: opData(c.x), y: opData(c.y), dir: opData(c.dir) } : c);
 
   function progData(list) {
     return list.map((b) => {
       const def = BLOCKS[b.t], o = { t: b.t };
       if (def.v) o.v = b.v;
-      if (def.count || def.num) o.n = b.n;
+      if (def.f) o.f = b.f;
+      if (def.l) o.l = b.l;
+      if (def.count) o.n = b.n;
+      if (def.ops) for (const k in def.ops) o[k] = opData(b[k]);
       if (def.cond) o.cond = condData(b.cond);
       if (def.body) o.body = progData(b.body || []);
       if (def.alt) o.alt = progData(b.alt || []);
@@ -1773,9 +2598,23 @@
     });
   }
 
+  /* 3 if the program needs anything newer than version 2 */
+  function fileVersion() {
+    let v = funcs.length || lists.length ? 3 : 2;
+    eachBlock((b) => {
+      if (!V2_TYPES.includes(b.t) || opsOf(b).length) v = 3;
+      if (b.cond && !isSensor(b.cond) && !isCompare(b.cond)) v = 3;
+    });
+    return v;
+  }
+
   function exportData() {
     const lv = level();
-    const data = { version: FILE_VERSION, level: lv.id, lang, vars: vars.slice(), prog: progData(prog) };
+    const version = fileVersion();
+    const data = { version, level: lv.id, lang, vars: vars.slice() };
+    if (version >= 3) data.lists = lists.slice();
+    if (version >= 3) data.funcs = funcs.map((f) => ({ name: f.name, body: progData(f.body) }));
+    data.prog = progData(prog);
     if (lv.sandbox) data.maze = Object.assign({ n: sandbox.n }, JSON.parse(JSON.stringify(sbMaze())));
     return data;
   }
@@ -1809,34 +2648,71 @@
     return out;
   }
 
+  /* A list of list names: valid, unique, at most LIST_MAX; or null. */
+  function cleanLists(list) {
+    if (!Array.isArray(list) || list.length > LIST_MAX) return null;
+    const out = [];
+    for (const v of list) {
+      if (typeof v !== 'string' || listNameProblem(v, out)) return null;
+      out.push(v);
+    }
+    return out;
+  }
+
+  const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+  /* A number field: a number (clamped to -999..999), or from version 3 a
+     declared variable {v} or list length {len}; or null. */
+  function cleanOp(o, names) {
+    if (isNum(o)) return clampNum(o);
+    if (names.version < 3 || !isObj(o) || Object.keys(o).length !== 1) return null;
+    if (own(o, 'v')) return names.vars.includes(o.v) ? { v: o.v } : null;
+    if (own(o, 'len')) return names.lists.includes(o.len) ? { len: o.len } : null;
+    if (own(o, 'p')) return POS.includes(o.p) ? { p: o.p } : null;
+    return null;
+  }
+
   /* A condition: one of the six sensor conditions, or a comparison of a
      declared variable: {v, op, n}. */
   function cleanCond(c, names) {
-    if (typeof c === 'string') return CONDITIONS.includes(c) ? c : null;
-    if (!isObj(c) || !names.includes(c.v) || !OPS.includes(c.op) || !isNum(c.n)) return null;
-    return { v: c.v, op: c.op, n: clampNum(c.n) };
+    if (typeof c === 'string') return CONDITIONS.includes(c) || (names.version >= 3 && MAP_CONDS.includes(c)) ? c : null;
+    if (names.version >= 3 && isObj(c) && own(c, 'dir')) {          /* Feld x y nach r offen (map) */
+      const x = cleanOp(c.x, names), y = cleanOp(c.y, names), dir = cleanOp(c.dir, names);
+      return x === null || y === null || dir === null ? null : { x, y, dir };
+    }
+    if (!isObj(c) || !names.vars.includes(c.v) || !OPS.includes(c.op)) return null;
+    const n = cleanOp(c.n, names);
+    return n === null ? null : { v: c.v, op: c.op, n };
   }
 
+  /* names: {vars, funcs, version} - what the file declares; count: {n} */
   function cleanList(list, depth, count, names) {
     if (!Array.isArray(list) || depth > FILE_DEPTH) return null;
+    const types = names.version === 1 ? V1_TYPES : names.version === 2 ? V2_TYPES : null;
     const out = [];
     for (const b of list) {
       if (!isObj(b)) return null;
       if (typeof b.t !== 'string' || !Object.prototype.hasOwnProperty.call(BLOCKS, b.t)) return null;
-      if (count.v1 && !V1_TYPES.includes(b.t)) return null;   /* a version-1 file knows only these */
+      if (types && !types.includes(b.t)) return null;          /* an older file knows only these */
       if (++count.n > FILE_BLOCKS) return null;
       const def = BLOCKS[b.t], o = { t: b.t };
       if (def.v) {
-        if (!names.includes(b.v)) return null;          /* unknown variable */
+        if (!names.vars.includes(b.v)) return null;          /* unknown variable */
         o.v = b.v;
+      }
+      if (def.f) {
+        if (!names.funcs.includes(b.f)) return null;         /* unknown own block */
+        o.f = b.f;
+      }
+      if (def.l) {
+        if (!names.lists.includes(b.l)) return null;         /* unknown list */
+        o.l = b.l;
       }
       if (def.count) {
         if (!isNum(b.n)) return null;
         o.n = Math.min(9, Math.max(1, Math.round(b.n)));
       }
-      if (def.num) {
-        if (!isNum(b.n)) return null;
-        o.n = clampNum(b.n);
+      if (def.ops) {
+        for (const k in def.ops) if ((o[k] = cleanOp(b[k], names)) === null) return null;
       }
       if (def.cond && !(o.cond = cleanCond(b.cond, names))) return null;
       if (def.body && !(o.body = cleanList(b.body, depth + 1, count, names))) return null;
@@ -1846,18 +2722,46 @@
     return out;
   }
 
-  /* file text -> {level, vars, prog, maze?} or null. Version 1 has no
-     variables (a vars key there is ignored), version 2 must list them. */
+  /* Own blocks from a file or from localStorage: names valid and unique,
+     at most FUNC_MAX, bodies clean, and none uses itself. null if not. */
+  function cleanFuncs(list, count, names) {
+    if (!Array.isArray(list) || list.length > FUNC_MAX) return null;
+    for (const f of list) {
+      if (!isObj(f) || funcNameProblem(f.name, names.funcs)) return null;
+      names.funcs.push(f.name);
+    }
+    count.n += list.length;                                  /* each "definiere" head */
+    const out = [];
+    for (const f of list) {
+      const body = cleanList(f.body, 1, count, names);
+      if (!body) return null;
+      out.push({ name: f.name, body });
+    }
+    for (const f of out) if (reaches(f.name, f.name, out)) return null;
+    return out;
+  }
+
+  /* file text -> {level, vars, funcs, prog, maze?} or null. Version 1 has
+     no variables (a vars key there is ignored), versions 2 and 3 must list
+     them; own blocks come with version 3. */
   function parseFile(text) {
     if (typeof text !== 'string' || text.length > FILE_MAX) return null;
     let d;
     try { d = JSON.parse(text); } catch (e) { return null; }
-    if (!isObj(d) || (d.version !== 1 && d.version !== 2)) return null;
-    const names = d.version === 1 ? [] : cleanVars(d.vars);
-    if (!names) return null;
-    const p = cleanList(d.prog, 0, { n: 0, v1: d.version === 1 }, names);
+    if (!isObj(d) || ![1, 2, 3].includes(d.version)) return null;
+    const varNames = d.version === 1 ? [] : cleanVars(d.vars);
+    if (!varNames) return null;
+    const listNames = d.version >= 3 && d.lists != null ? cleanLists(d.lists) : [];
+    if (!listNames) return null;
+    const low = varNames.map((v) => v.toLowerCase());
+    if (listNames.some((l) => low.includes(l.toLowerCase()))) return null;   /* one name space */
+    const names = { vars: varNames, lists: listNames, funcs: [], version: d.version };
+    const count = { n: 0 };
+    const fs = d.version >= 3 && d.funcs != null ? cleanFuncs(d.funcs, count, names) : [];
+    if (!fs) return null;
+    const p = cleanList(d.prog, 0, count, names);
     if (!p) return null;
-    const out = { level: Number.isInteger(d.level) ? d.level : null, vars: names, prog: p };
+    const out = { level: Number.isInteger(d.level) ? d.level : null, vars: varNames, lists: listNames, funcs: fs, prog: p };
     if (d.maze != null) {
       const n = d.maze.n;
       const m = sbClean(d.maze, n);
@@ -1880,8 +2784,9 @@
     const lv = level();
     prog = data.prog;
     vars = data.vars;
-    varFormOpen = false;
-    varMsg = '';
+    lists = data.lists;
+    funcs = data.funcs;
+    resetForms();
     saveProg();
     if (data.maze && lv.sandbox) {
       sandbox.n = data.maze.n;
@@ -1940,13 +2845,17 @@
       't-start': 'startHere', 't-end': 'end', 't-trash': 'trash', 't-where': 'whereBot',
       't-speed': 'speed', 't-robotCard': 'robotCard', 't-sensorCard': 'sensorCard',
       't-cellLabel': 'cellLabel', 't-save': 'save', 't-open': 'open', 'driveLink': 'driveLink',
+      'learnLink': 'learnLink', 'shopLink': 'shopLink',
       't-sbWalls': 'sbWalls', 't-sbStart': 'sbStart', 't-sbGoal': 'sbGoal',
       'sbClear': 'sbClear', 'sbRandom': 'sbRandom', 't-watch': 'watch',
     };
     for (const id in map) { const n = $(id); if (n) n.textContent = t(map[id]); }
     $('sbSize').setAttribute('aria-label', t('sbSize'));
+    document.querySelector('.rail-links').setAttribute('aria-label', t('pagesNav'));
     renderSizes();
     $('langBtn').textContent = t('lang');
+    $('t-profi').textContent = t('profi');
+    $('profiBtn').setAttribute('aria-pressed', String(profi));
     $('connectBtn').textContent = port ? t('disconnect') : t('connect');
     if (!port) $('linkText').textContent = t('notConnected');
     $('runBtn').textContent = t('run');
@@ -1961,9 +2870,9 @@
   }
 
   /* ---------------- persistence ---------------- */
-  function saveProg() { progs[level().id] = prog; varsBy[level().id] = vars; }
+  function saveProg() { progs[level().id] = prog; varsBy[level().id] = vars; funcsBy[level().id] = funcs; listsBy[level().id] = lists; }
   /* what goes into localStorage (variables: field vars, per level id) */
-  const storeData = () => ({ lang, levelIx, progs, done, sandbox, vars: varsBy });
+  const storeData = () => ({ lang, profi, levelIx, progs, done, sandbox, vars: varsBy, funcs: funcsBy, lists: listsBy });
   function save() {
     if (SELFTEST) return;                 /* the self-test must not overwrite real work */
     try {
@@ -1974,11 +2883,16 @@
   /* Stored variable lists, checked like a file's; a list that is not valid
      is dropped. Then every name a stored program uses is added back if it is
      a valid name, so a program never points at a missing variable. */
-  function restoreVars(s, programs) {
+  /* Stored names per task (variables or lists), checked like a file's; a
+     list of names that is not valid is dropped. Then every name a stored
+     program or own block uses is added back if it is a valid name, so a
+     program never points at a missing variable or list. A variable never
+     takes a name its task's lists have. */
+  function restoreNames(s, programs, ownBlocks, clean, usedIn, problem, avoid) {
     const out = {};
     if (isObj(s)) {
       for (const id of Object.keys(s)) {
-        const list = cleanVars(s[id]);
+        const list = clean(s[id]);
         if (list && LEVELS.some((lv) => String(lv.id) === id)) out[id] = list;
       }
     }
@@ -1986,8 +2900,8 @@
       if (!Array.isArray(list)) return;
       for (const b of list) {
         if (!isObj(b)) continue;
-        for (const v of [b.v, isCompare(b.cond) ? b.cond.v : null]) {
-          if (typeof v === 'string' && !names.includes(v) && !varNameProblem(v, names)) names.push(v);
+        for (const v of usedIn(b)) {
+          if (typeof v === 'string' && !names.includes(v) && !problem(v, names)) names.push(v);
         }
         walk(b.body, names);
         walk(b.alt, names);
@@ -1998,8 +2912,47 @@
         if (!LEVELS.some((lv) => String(lv.id) === id)) continue;
         const names = out[id] || [];
         walk(programs[id], names);
+        for (const fb of (isObj(ownBlocks) && ownBlocks[id]) || []) walk(fb.body, names);
         if (names.length) out[id] = names;
       }
+    }
+    if (isObj(avoid)) {
+      for (const id of Object.keys(out)) {
+        const low = (avoid[id] || []).map((n) => n.toLowerCase());
+        out[id] = out[id].filter((n) => !low.includes(n.toLowerCase()));
+        if (!out[id].length) delete out[id];
+      }
+    }
+    return out;
+  }
+
+  const opsRaw = (b) => { try { return opsOf(b); } catch (e) { return []; } };
+  function restoreVars(s, programs, ownBlocks, listStore) {
+    return restoreNames(s, programs, ownBlocks, cleanVars,
+      (b) => [b.v, isCompare(b.cond) ? b.cond.v : null].concat(opsRaw(b).map((o) => o.v)),
+      (v, names) => varNameProblem(v, names), listStore);
+  }
+  function restoreLists(s, programs, ownBlocks) {
+    return restoreNames(s, programs, ownBlocks, cleanLists,
+      (b) => [b.l].concat(opsRaw(b).map((o) => o.len)),
+      (v, names) => listNameProblem(v, names), null);
+  }
+
+
+  /* Stored own blocks per task: names valid and unique, at most FUNC_MAX,
+     a body that is a list; a bad entry is dropped. (Like the stored
+     programs, the bodies themselves are taken as they are; a block that
+     somehow uses itself still only ends its run with a message.) */
+  function restoreFuncs(s) {
+    const out = {};
+    if (!isObj(s)) return out;
+    for (const id of Object.keys(s)) {
+      if (!LEVELS.some((lv) => String(lv.id) === id) || !Array.isArray(s[id])) continue;
+      const list = [];
+      for (const f of s[id]) {
+        if (isObj(f) && Array.isArray(f.body) && !funcNameProblem(f.name, list.map((x) => x.name))) list.push({ name: f.name, body: f.body });
+      }
+      if (list.length) out[id] = list;
     }
     return out;
   }
@@ -2010,11 +2963,14 @@
       const s = JSON.parse(localStorage.getItem(STORE) || 'null');
       if (!s) return;
       if (s.lang === 'de' || s.lang === 'en') lang = s.lang;
+      if (typeof s.profi === 'boolean') profi = s.profi;
       if (typeof s.levelIx === 'number' && LEVELS[s.levelIx]) levelIx = s.levelIx;
       if (s.progs && typeof s.progs === 'object') progs = s.progs;
       if (s.done && typeof s.done === 'object') done = s.done;
       sandbox = sbRestore(s.sandbox);
-      varsBy = restoreVars(s.vars, progs);
+      funcsBy = restoreFuncs(s.funcs);
+      listsBy = restoreLists(s.lists, progs, funcsBy);
+      varsBy = restoreVars(s.vars, progs, funcsBy, listsBy);
     } catch (e) { /* ignore */ }
   }
 
@@ -2035,6 +2991,8 @@
     }
     prog = progs[LEVELS[levelIx].id] || [];
     vars = varsBy[LEVELS[levelIx].id] || [];
+    funcs = funcsBy[LEVELS[levelIx].id] || [];
+    lists = listsBy[LEVELS[levelIx].id] || [];
     world = buildWorld(worldLevel(), 0);
 
     document.addEventListener('pointerdown', onPointerDown);
@@ -2052,6 +3010,7 @@
     $('openFile').addEventListener('change', openFile);
     $('connectBtn').addEventListener('click', connect);
     $('langBtn').addEventListener('click', () => { lang = lang === 'de' ? 'en' : 'de'; save(); applyLang(); });
+    $('profiBtn').addEventListener('click', () => { profi = !profi; save(); applyLang(); });
     $('runBtn').addEventListener('click', () => (session && $('runBtn').classList.contains('is-stop') ? stopRun() : runAll()));
     $('stepBtn').addEventListener('click', stepOnce);
     $('resetBtn').addEventListener('click', () => { resetRun(); hideVerdict(); });
@@ -2078,8 +3037,28 @@
         /* variables: the open program's names, and the values now */
         get vars() { return vars.slice(); },
         get varValues() { const o = {}; for (const v of vars) o[v] = varVal(v); return o; },
-        setVars(list) { vars = list.slice(); saveProg(); varFormOpen = false; varMsg = ''; resetVars(); renderPalette(); renderProgram(); },
+        setVars(list) { vars = list.slice(); saveProg(); resetForms(); resetVars(); renderPalette(); renderProgram(); },
         addVar, deleteVar, varNameProblem, stepOnce, storeData, restoreVars,
+        get profi() { return profi; },
+        get lang() { return lang; },
+        /* own blocks: [{name, body}] - set as they are (no checks: the
+           self-test also builds a hand-made loop to try the run guard) */
+        get funcs() { return funcs; },
+        setFuncs(list) { funcs = list; saveProg(); resetForms(); renderPalette(); renderProgram(); },
+        addFunc, deleteFunc, funcNameProblem, countAll, restoreFuncs,
+        /* lists: the open program's names, and their items now */
+        get lists() { return lists.slice(); },
+        get listValues() { const o = {}; for (const l of lists) o[l] = listOf(l).slice(); return o; },
+        setLists(list) { lists = list.slice(); saveProg(); resetForms(); resetVars(); renderPalette(); renderProgram(); },
+        addList, deleteList, listNameProblem, restoreLists,
+        /* a value pill dropped on a number field, as the mouse does it */
+        dropValue(op, slot) { const ok = dropValue(op, slot); renderProgram(); return ok; },
+        get thinks() { return session ? session.thinks : lastThinks; },
+        /* the robot's map now: numbers (y * n + x, -1 empty) and remembered sides */
+        maxThinksFor: (n) => Math.min(THINK_CAP, Math.max(THINK_MIN, THINK_PER * Math.pow(n, 4))),
+        get mapState() { return { nums: mapNums.slice(), known: Object.fromEntries(mapKnown) }; },
+        /* a drop exactly as the mouse makes it: container path, index */
+        dropBlock(block, srcPath, cpath, index) { const ok = dropBlock(block, srcPath, cpath, index); renderProgram(); return ok; },
         get world() { return world; },
         get lastResult() { return lastResult; },
         get done() { return Object.assign({}, done); },
